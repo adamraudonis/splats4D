@@ -110,6 +110,21 @@ Errors are structural maxima of the quantizer — never exceeded, by
 construction (quantize-then-delta on integers; deadband checks enforce the
 bound before every emitted symbol).
 
+## Interoperability with existing splat viewers
+
+Single frames reconstructed from a `.splat4d` (`splat4d decode --frame N`) are
+standard antimatter15 `.splat` files. Verified by loading a decoded flame
+frame (333,824 splats, 10.7 MB) into third-party viewers:
+
+| viewer | result |
+|---|---|
+| antimatter15/splat (the format's reference WebGL viewer) | loads via `?url=`, correct splat count, renders the scene correctly at 77 fps |
+| PlayCanvas SuperSplat editor (local build of `playcanvas/supersplat@main`) | imports via `?load=`, status bar reports 333,824 splats, renders and orbits with no console errors |
+
+So any `.splat4d` can be exploded back into frames consumable by the existing
+ecosystem, and conversely anything that emits `.splat` frames can feed the
+encoder.
+
 ## Viewer (three.js r185 WebGPURenderer, no WebGL fallback)
 
 Measured in Chrome (WebGPU backend asserted), 336,568 splats:

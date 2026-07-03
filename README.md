@@ -105,9 +105,12 @@ Point the viewer at it with `?file=https://bucket.example.com/scene.splat4d`.
 
 ## Python package
 
-`pip install splat4d` — a pure-Python (numpy) encoder producing the identical
-format, for pipelines where the Rust binary isn't convenient. Same CLI:
-`splat4d encode -i frames_dir -o out.splat4d`. Source in [python/](python/).
+`pip install splat4d` — ships the native Rust CLI as a platform wheel (maturin
+`bin` bindings): after install, the `splat4d` executable is on your PATH at
+full native speed. Same CLI as building from source:
+`splat4d encode -i frames_dir -o out.splat4d`. Packaging lives in
+[converter/pyproject.toml](converter/pyproject.toml); wheels are built by
+[.github/workflows/wheels.yml](.github/workflows/wheels.yml).
 
 See [docs/FORMAT.md](docs/FORMAT.md) for the byte-level spec and
 [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full results, including
