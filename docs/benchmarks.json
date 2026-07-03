@@ -1,0 +1,215 @@
+{
+ "generated": "2026-07-03",
+ "sequences": [
+  {
+   "seq": "boxes_2s",
+   "frames": 40,
+   "splats": 351422,
+   "fps": 20.0,
+   "raw_bytes": 449820160,
+   "gzip_per_frame_bytes": 422568758,
+   "gzip_concat_bytes": 422572201,
+   "zstd19_long_bytes": 183566507,
+   "splat4d_default": {
+    "bytes": 21492153,
+    "encode_s": 5.176497625,
+    "entropy_min_bytes": 22839624.85827639,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 4.999997615814267,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950461547710843
+    },
+    "static_fracs": {
+     "alpha": 1.0,
+     "pos": 0.8533102651512996,
+     "rgb": 0.055426239677652506,
+     "rot": 0.8533188018962956,
+     "scale": 1.0
+    }
+   },
+   "splat4d_denoised": {
+    "bytes": 15951539,
+    "encode_s": 3.2769582919999998,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 4.999997615814267,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950461547710843
+    }
+   }
+  },
+  {
+   "seq": "juggle",
+   "frames": 150,
+   "splats": 336568,
+   "fps": 20.0,
+   "raw_bytes": 1615526400,
+   "gzip_per_frame_bytes": 1514743745,
+   "gzip_concat_bytes": 1514736413,
+   "zstd19_long_bytes": 641976104,
+   "splat4d_default": {
+    "bytes": 63896007,
+    "encode_s": 13.880705916,
+    "entropy_min_bytes": 66291642.18143578,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.0000000000001155,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950490895740627
+    },
+    "static_fracs": {
+     "alpha": 1.0,
+     "pos": 0.8005514487414134,
+     "rgb": 0.040990230800313755,
+     "rot": 0.8048477573625538,
+     "scale": 1.0
+    }
+   },
+   "splat4d_denoised": {
+    "bytes": 43501705,
+    "encode_s": 10.987009167,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.0000000000001155,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950490895740627
+    }
+   }
+  },
+  {
+   "seq": "juggle_2s",
+   "frames": 40,
+   "splats": 336568,
+   "fps": 20.0,
+   "raw_bytes": 430807040,
+   "gzip_per_frame_bytes": 404785403,
+   "gzip_concat_bytes": 404782740,
+   "zstd19_long_bytes": 176623989,
+   "splat4d_default": {
+    "bytes": 20736110,
+    "encode_s": 4.635277625,
+    "entropy_min_bytes": 21699103.94764526,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.0000000000001155,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950490895740627
+    },
+    "static_fracs": {
+     "alpha": 1.0,
+     "pos": 0.8039890898718832,
+     "rgb": 0.05709693137790877,
+     "rot": 0.8049695752418531,
+     "scale": 1.0
+    }
+   },
+   "splat4d_denoised": {
+    "bytes": 15070421,
+    "encode_s": 4.875662208,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.0000000000001155,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950490895740627
+    }
+   }
+  },
+  {
+   "seq": "softball_2s",
+   "frames": 40,
+   "splats": 335567,
+   "fps": 20.0,
+   "raw_bytes": 429525760,
+   "gzip_per_frame_bytes": 403601786,
+   "gzip_concat_bytes": 403603469,
+   "zstd19_long_bytes": 175382703,
+   "splat4d_default": {
+    "bytes": 20556455,
+    "encode_s": 4.042757791,
+    "entropy_min_bytes": 21900254.898265783,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.000000000000004,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950485757003413
+    },
+    "static_fracs": {
+     "alpha": 1.0,
+     "pos": 0.8221368608951417,
+     "rgb": 0.058891368936754805,
+     "rot": 0.8232871527891599,
+     "scale": 1.0
+    }
+   },
+   "splat4d_denoised": {
+    "bytes": 15085674,
+    "encode_s": 4.837461041,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.000000000000004,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950485757003413
+    }
+   }
+  },
+  {
+   "seq": "tennis_2s",
+   "frames": 40,
+   "splats": 333076,
+   "fps": 20.0,
+   "raw_bytes": 426337280,
+   "gzip_per_frame_bytes": 400775135,
+   "gzip_concat_bytes": 400778536,
+   "zstd19_long_bytes": 175800304,
+   "splat4d_default": {
+    "bytes": 20772386,
+    "encode_s": 3.552357208,
+    "entropy_min_bytes": 22353808.83643999,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.000000000000004,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950492505917508
+    },
+    "static_fracs": {
+     "alpha": 1.0,
+     "pos": 0.841159375037529,
+     "rgb": 0.061211255088928655,
+     "rot": 0.842717577970193,
+     "scale": 1.0
+    }
+   },
+   "splat4d_denoised": {
+    "bytes": 15233416,
+    "encode_s": 4.409740792,
+    "verify": {
+     "alpha_levels": 0,
+     "ok": true,
+     "pos_mm": 5.000000000000004,
+     "rgb_levels": 4,
+     "rot_units": 1,
+     "scale_pct": 0.9950492505917508
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,91 @@
+# Build splat4d wheels (native Rust CLI packaged via maturin bin bindings)
+# and publish to PyPI on version tags (v*) using PyPI trusted publishing.
+#
+# One-time setup on pypi.org (no secrets needed): project "splat4d" ->
+# Publishing -> add GitHub publisher: owner adamraudonis, repo splats4D,
+# workflow wheels.yml, environment pypi.
+name: wheels
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist -m converter/Cargo.toml
+          manylinux: auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: dist
+
+  macos:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist -m converter/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: x64
+          args: --release --out dist -m converter/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x64
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist -m converter/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows, sdist]
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Publish
+        run: uv publish --trusted-publishing automatic 'wheels-*/*'

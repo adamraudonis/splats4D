@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>splat4d — 4D Gaussian Splat Viewer (WebGPU)</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: rgba(16, 20, 25, 0.85);
+        --text: #d7dde4;
+        --dim: #8a94a0;
+        --accent: #4da3ff;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { height: 100%; background: var(--bg); overflow: hidden;
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: var(--text); }
+      #canvas-wrap { position: fixed; inset: 0; }
+      canvas.webgpu { display: block; width: 100%; height: 100%; }
+
+      .card { background: var(--panel); border: 1px solid #232a33; border-radius: 8px;
+        padding: 10px 12px; backdrop-filter: blur(6px); font-size: 11px; line-height: 1.65; }
+      .card .h { color: var(--dim); text-transform: uppercase; font-size: 9.5px;
+        letter-spacing: 0.08em; margin-top: 6px; }
+      .card b { color: var(--accent); font-weight: 600; }
+
+      #hud { position: fixed; top: 12px; left: 12px; min-width: 235px; }
+
+      #panel { position: fixed; top: 12px; right: 12px; width: 305px;
+        max-height: calc(100vh - 120px); overflow-y: auto; }
+      #panel .t { font-size: 13px; color: #fff; font-weight: 600; }
+      #panel .s { color: var(--dim); }
+      #panel .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+      #panel .row label { flex: none; width: 86px; color: var(--dim); white-space: nowrap; }
+      #panel .row output { flex: none; width: 62px; text-align: right; color: var(--text); white-space: nowrap; }
+      #panel input[type='range'] { flex: 1 1 0; min-width: 0; accent-color: var(--accent); height: 14px; }
+      #panel select { background: #161c23; color: var(--text); border: 1px solid #2c3540;
+        border-radius: 4px; font: inherit; padding: 1px 4px; }
+      #panel .actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+      #encode-btn { background: var(--accent); color: #06121f; border: 0; border-radius: 6px;
+        padding: 6px 12px; font: inherit; font-weight: 700; cursor: pointer; }
+      #encode-btn:disabled { background: #2c3540; color: var(--dim); cursor: wait; }
+      #copy-btn { background: #161c23; color: var(--text); border: 1px solid #2c3540;
+        border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
+      #copy-btn:hover { filter: brightness(1.25); }
+      #enc-status { color: var(--dim); }
+      #enc-stats { margin-top: 6px; border-top: 1px solid #232a33; padding-top: 6px; }
+
+      #bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px;
+        width: min(860px, calc(100% - 32px)); background: var(--panel);
+        border: 1px solid #232a33; border-radius: 10px; padding: 10px 14px;
+        display: flex; align-items: center; gap: 12px; backdrop-filter: blur(6px); }
+      #play, #compare-btn { height: 34px; border-radius: 17px; border: 1px solid #2c3540;
+        background: #161c23; color: var(--text); cursor: pointer; font-size: 13px;
+        display: flex; align-items: center; justify-content: center; flex: none;
+        font-family: inherit; }
+      #play { width: 34px; }
+      #compare-btn { padding: 0 12px; font-size: 11px; }
+      #compare-btn.on { background: var(--accent); color: #06121f; border-color: var(--accent); }
+      #play:hover, #compare-btn:hover { filter: brightness(1.2); }
+      #timeline { flex: 1; height: 26px; cursor: pointer; }
+      #clock { color: var(--dim); font-size: 11px; flex: none; min-width: 92px; text-align: right; }
+
+      #divider { position: fixed; top: 0; bottom: 0; width: 0; display: none; z-index: 5; }
+      #divider .line { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px;
+        background: rgba(255,255,255,0.75); }
+      #divider .grip { position: absolute; top: 50%; left: -14px; width: 28px; height: 28px;
+        border-radius: 50%; background: #fff; color: #0b0d10; display: flex; align-items: center;
+        justify-content: center; font-size: 12px; cursor: ew-resize; transform: translateY(-50%);
+        user-select: none; }
+      #divider .tag { position: absolute; top: 70px; font-size: 10px; padding: 3px 8px;
+        border-radius: 4px; background: var(--panel); border: 1px solid #232a33; white-space: nowrap; }
+      #divider .tag.l { right: 10px; }
+      #divider .tag.r { left: 10px; }
+
+      #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: var(--bg); z-index: 10; flex-direction: column; gap: 14px; text-align: center; padding: 24px; }
+      #overlay .big { font-size: 15px; color: #fff; }
+      #overlay .small { font-size: 12px; color: var(--dim); max-width: 480px; line-height: 1.6; }
+      #overlay.hidden { display: none; }
+      .spin { width: 22px; height: 22px; border: 2px solid #2c3540; border-top-color: var(--accent);
+        border-radius: 50%; animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <script type="module" crossorigin src="./assets/index-BCQQ9_uS.js"></script>
+  </head>
+  <body>
+    <div id="canvas-wrap"></div>
+
+    <div id="overlay">
+      <div class="spin"></div>
+      <div class="big" id="overlay-msg">Loading…</div>
+      <div class="small" id="overlay-sub"></div>
+    </div>
+
+    <div id="divider">
+      <div class="line"></div>
+      <div class="tag l">◀ original (raw .splat)</div>
+      <div class="tag r">splat4d ▶</div>
+      <div class="grip">⇔</div>
+    </div>
+
+    <div id="hud" class="card">
+      <div class="h">stream</div>
+      <div>loaded <b id="m-loaded">0</b> / <span id="m-total">?</span> MB</div>
+      <div>header+static <b id="m-static">…</b> · first view <b id="m-ttfv">…</b></div>
+      <div class="h">playback</div>
+      <div>frame <b id="m-frame">0</b> · decode <b id="m-decode">0</b> ms</div>
+      <div>sort <b id="m-sort">0</b> ms · fps <b id="m-fps">0</b></div>
+      <div class="h">scene</div>
+      <div><span id="m-splats">0</span> splats · <span id="m-dyn"></span></div>
+      <div id="m-bounds" style="color: var(--dim)"></div>
+    </div>
+
+    <div id="panel" class="card">
+      <div class="t">splat4d</div>
+      <div class="s" id="m-ratio">compression controls</div>
+      <div class="h">sequence</div>
+      <div class="row"><label for="s-seq">scene</label>
+        <select id="s-seq" style="flex:1"><option value="juggle_2s">juggle · 2s</option></select></div>
+      <div class="h">error bounds</div>
+      <div class="row"><label for="s-pos">position</label>
+        <input id="s-pos" type="range" min="0.5" max="20" step="0.5" value="5" /><output id="o-pos">±5 mm</output></div>
+      <div class="row"><label for="s-col">color</label>
+        <input id="s-col" type="range" min="0" max="16" step="1" value="4" /><output id="o-col">±4/255</output></div>
+      <div class="row"><label for="s-rot">rotation</label>
+        <input id="s-rot" type="range" min="0" max="4" step="1" value="1" /><output id="o-rot">±1/128</output></div>
+      <div class="row"><label for="s-scl">scale</label>
+        <input id="s-scl" type="range" min="0.5" max="10" step="0.5" value="2" /><output id="o-scl">±2%</output></div>
+      <div class="h">stream structure</div>
+      <div class="row"><label for="s-gop">keyframe every</label>
+        <input id="s-gop" type="range" min="10" max="75" step="5" value="30" /><output id="o-gop">30 fr</output></div>
+      <div class="row"><label for="s-dn">denoise colors</label>
+        <input id="s-dn" type="checkbox" style="accent-color: var(--accent)" />
+        <span class="s" style="flex:1">median-5 prefilter</span></div>
+      <div class="row"><label for="s-z">effort</label>
+        <select id="s-z">
+          <option value="3" selected>fast (zstd 3)</option>
+          <option value="13">balanced (zstd 13)</option>
+          <option value="0">auto (19/13)</option>
+          <option value="19">max (zstd 19)</option>
+        </select></div>
+      <div class="actions">
+        <button id="encode-btn">Encode &amp; load</button>
+        <button id="copy-btn" title="copy current settings as CLI flags">⧉ copy</button>
+        <span id="enc-status"></span>
+      </div>
+      <div id="enc-stats"></div>
+    </div>
+
+    <div id="bar">
+      <button id="play">▶</button>
+      <button id="compare-btn" title="split view vs original (C)">⇔ compare</button>
+      <canvas id="timeline" width="1200" height="52"></canvas>
+      <div id="clock">0.00 / 0.00</div>
+    </div>
+
+  </body>
+</html>
