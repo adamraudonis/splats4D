@@ -168,9 +168,10 @@ export function createSplatMesh(n: number, opts: SplatMeshOptions = {}): SplatMe
       const a0 = v3(dot(vc0, r0), dot(vc1, r0), dot(vc2, r0)).toVar();
       const a1 = v3(dot(vc0, r1), dot(vc1, r1), dot(vc2, r1)).toVar();
 
-      // cov2d entries + low-pass dilation (3DGS rasterizer convention)
-      const c00 = dot(a0, (Vrk as any).mul(a0)).add(0.3).toVar();
-      const c11 = dot(a1, (Vrk as any).mul(a1)).add(0.3).toVar();
+      // cov2d entries + small low-pass dilation (reference viewers use ~0.075
+      // in true-covariance units; larger values visibly soften small splats)
+      const c00 = dot(a0, (Vrk as any).mul(a0)).add(0.075).toVar();
+      const c11 = dot(a1, (Vrk as any).mul(a1)).add(0.075).toVar();
       const c01 = dot(a0, (Vrk as any).mul(a1)).toVar();
 
       const mid = c00.add(c11).mul(0.5).toVar();
@@ -208,9 +209,13 @@ export function createSplatMesh(n: number, opts: SplatMeshOptions = {}): SplatMe
     const keep = clipCfg.y
       .equal(0.0)
       .or(vNdcX.sub(clipCfg.x).mul(clipCfg.y).greaterThan(0.0));
-    const a = exp(dot(vPos, vPos).mul(-0.5))
+    // quad param ±2 maps to ±2.83σ, so the gaussian is exp(-d²) with a hard
+    // cutoff at d²=4 — matching the reference antimatter15/3DGS rasterizers.
+    // (exp(-d²/2) here would render every splat √2× too wide.)
+    const d2 = dot(vPos, vPos);
+    const a = exp(d2.negate())
       .mul((vColor as any).w)
-      .mul(select(keep, float(1.0), float(0.0)));
+      .mul(select(keep.and(d2.lessThan(4.0)), float(1.0), float(0.0)));
     return vec4((vColor as any).xyz.mul(a), a);
   })();
 

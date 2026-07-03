@@ -43,6 +43,8 @@ async function init() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.setClearColor(0x0b0d10);
+  // splat colors are sRGB and blended as-is (reference-viewer convention)
+  renderer.toneMapping = THREE.NoToneMapping;
   await renderer.init();
   const backend = (renderer as unknown as { backend: { isWebGPUBackend?: boolean } }).backend;
   if (backend.isWebGPUBackend !== true) {
@@ -333,6 +335,7 @@ async function init() {
     position: number[];
     target: number[];
     up?: number[];
+    fov?: number; // vertical degrees — forward-facing captures want a narrow one
   }
   const seqCameras = new Map<string, CamHint | null>();
   let pendingCamera: CamHint | null = null;
@@ -342,7 +345,10 @@ async function init() {
     camera.up.set(hint.up?.[0] ?? 0, hint.up?.[1] ?? -1, hint.up?.[2] ?? 0);
     camera.position.set(hint.position[0], hint.position[1], hint.position[2]);
     controls.target.set(hint.target[0], hint.target[1], hint.target[2]);
+    camera.fov = hint.fov ?? 60;
+    camera.updateProjectionMatrix();
     controls.update();
+    onResize(); // focal uniforms depend on fov
   }
 
   async function loadSequenceList() {
