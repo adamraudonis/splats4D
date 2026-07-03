@@ -19,7 +19,13 @@ function listSequences() {
       .filter((d) => /^[a-z0-9_]+$/.test(d) && fs.existsSync(path.join(FRAMES_ROOT, d, 'frames.json')))
       .map((d) => {
         const m = JSON.parse(fs.readFileSync(path.join(FRAMES_ROOT, d, 'frames.json'), 'utf8'));
-        return { id: d, frames: m.count ?? m.frames.length, fps: m.fps, splats: m.num_splats ?? 0 };
+        return {
+          id: d,
+          frames: m.count ?? m.frames.length,
+          fps: m.fps,
+          splats: m.num_splats ?? 0,
+          camera: m.camera ?? null,
+        };
       })
       .sort((a, b) => a.id.localeCompare(b.id));
   } catch {

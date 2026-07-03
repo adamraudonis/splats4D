@@ -218,6 +218,10 @@ async function init() {
         splats!.markQuat();
         splats!.markRgba();
         sessionReady = true;
+        if (pendingCamera) {
+          applyCameraHint(pendingCamera);
+          pendingCamera = null;
+        }
         maybeSort(true);
         lastShownFrame = -1;
         requestFrame(Math.min(meta.t - 1, Math.floor(timeSec * meta.fps)));
@@ -325,13 +329,28 @@ async function init() {
   // ================= encode panel =================
   const seqSelect = $('s-seq') as HTMLSelectElement;
   let currentSeq = 'juggle_2s';
+  interface CamHint {
+    position: number[];
+    target: number[];
+    up?: number[];
+  }
+  const seqCameras = new Map<string, CamHint | null>();
+  let pendingCamera: CamHint | null = null;
+
+  function applyCameraHint(hint: CamHint | null) {
+    if (!hint || !controls) return;
+    camera.up.set(hint.up?.[0] ?? 0, hint.up?.[1] ?? -1, hint.up?.[2] ?? 0);
+    camera.position.set(hint.position[0], hint.position[1], hint.position[2]);
+    controls.target.set(hint.target[0], hint.target[1], hint.target[2]);
+    controls.update();
+  }
 
   async function loadSequenceList() {
     try {
       const r = await fetch('/api/sequences');
       if (!r.ok) return;
       const { sequences } = (await r.json()) as {
-        sequences: { id: string; frames: number; fps: number; splats: number }[];
+        sequences: { id: string; frames: number; fps: number; splats: number; camera: CamHint | null }[];
       };
       if (!sequences.length) return;
       seqSelect.innerHTML = '';
@@ -341,10 +360,12 @@ async function init() {
         const secs = (s.frames / s.fps).toFixed(1);
         opt.textContent = `${s.id.replace(/_2s$/, '')} · ${secs}s · ${(s.splats / 1000).toFixed(0)}k`;
         seqSelect.appendChild(opt);
+        seqCameras.set(s.id, s.camera);
       }
       const preferred = sequences.find((s) => s.id === 'juggle_2s') ?? sequences[0];
       currentSeq = preferred.id;
       seqSelect.value = currentSeq;
+      pendingCamera = seqCameras.get(currentSeq) ?? null;
     } catch {
       /* API absent (static hosting) */
     }
@@ -356,6 +377,7 @@ async function init() {
     timeSec = 0;
     playing = false;
     playBtn.textContent = '▶';
+    pendingCamera = seqCameras.get(currentSeq) ?? null;
     void runEncode();
   };
 
@@ -576,10 +598,22 @@ async function init() {
     origLoader.reset(`/frames/${currentSeq}`);
     const ok = await runEncode(); // default params; cached after first run
     if (!ok) {
-      // no dev API (static hosting) — fall back to a pre-encoded file
+      // no dev API (static hosting) — fall back to a pre-encoded file,
+      // optionally described by a demo.json ({file, camera}) next to the page
       $('panel').style.display = 'none';
       compareBtn.style.display = 'none';
-      loadFile('juggle.splat4d');
+      let demoFile = 'juggle.splat4d';
+      try {
+        const d = await fetch('demo.json');
+        if (d.ok) {
+          const j = (await d.json()) as { file?: string; camera?: CamHint };
+          demoFile = j.file ?? demoFile;
+          pendingCamera = j.camera ?? null;
+        }
+      } catch {
+        /* keep defaults */
+      }
+      loadFile(demoFile);
     }
   }
 

@@ -120,6 +120,8 @@ async function load() {
     denoised: h.denoised,
     headerMs: performance.now() - t0,
   });
+  // bytes may have fully streamed before the header existed — re-check now
+  if (!rangeMode) checkSequentialGops();
 
   // static section
   const so = h.static_section.offset;
@@ -158,7 +160,10 @@ async function streamBody(resp: Response) {
   const reader = resp.body!.getReader();
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      checkSequentialGops(); // final sweep in case the header arrived late
+      break;
+    }
     if (bytesLoaded + value.length > fb.length) {
       const bigger = new Uint8Array(Math.max(fb.length * 2, bytesLoaded + value.length));
       bigger.set(fb.subarray(0, bytesLoaded));

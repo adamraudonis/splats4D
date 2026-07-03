@@ -129,11 +129,14 @@ no video container. A client needs exactly:</p>
 <code>Content-Encoding</code> — range math stays byte-exact and nothing double-compresses.</p>
 
 <h2>Benchmarks</h2>
-<p>Sequences are tracked-gaussian captures from
-<a href="https://dynamic3dgaussians.github.io/">Dynamic 3D Gaussians</a> (CMU Panoptic dome),
-converted to per-frame antimatter15 <code>.splat</code> files (32 B/splat), 20 fps.
-splat4d encodes use default bounds (±5 mm / ±4 color / ±1/128 rot / ±2% scale), bounds verified
-exhaustively on every run. gzip is <code>-9</code>. Encoded on a 10-core Apple-Silicon laptop.</p>
+<p>Eight sequences from three independent capture pipelines:
+<a href="https://dynamic3dgaussians.github.io/">Dynamic 3D Gaussians</a> (CMU Panoptic dome —
+juggle, boxes, softball, tennis), Neu3D cooking scenes via
+SpacetimeGaussians/<a href="https://github.com/antimatter15/splaTV">splaTV</a> (flame = backyard
+BBQ, sear = kitchen chef), and Technicolor (birthday party, 659k splats) — all converted to
+per-frame antimatter15 <code>.splat</code> files (32 B/splat), 20 fps. splat4d encodes use default
+bounds (±5 mm / ±4 color / ±1/128 rot / ±2% scale), bounds verified exhaustively on every run.
+gzip is <code>-9</code>. Encoded on a 10-core Apple-Silicon laptop.</p>
 <div class="tablewrap" id="bench-tables"><p class="dim">loading benchmarks.json…</p></div>
 
 <h3>Rate / bounds trade-off (juggle, full 7.5 s, 150×336,568 splats, 1,615 MB raw)</h3>

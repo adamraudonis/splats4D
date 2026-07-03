@@ -26,20 +26,34 @@ pays for float-identical re-encoding.
 
 ## Per-sequence results (including gzip baselines)
 
-Five sequences from Dynamic 3D Gaussians (2-second clips @ 20 fps, plus the
-full juggle). "each frame gzip-9" = the sum of gzipping every .splat file
-individually (i.e. shipping gzipped frames); concatenated gzip is no better —
-gzip's 32 KB window can't see across 10 MB frames. splat4d rows are the
-default preset (±5 mm / ±4 / ±1/128 / ±2 %), bounds verified on every splat of
-every frame. Machine-readable copy: [benchmarks.json](benchmarks.json).
+Eight sequences from three independent sources: Dynamic 3D Gaussians (CMU
+Panoptic dome: juggle/boxes/softball/tennis), Neu3D cooking scenes via
+SpacetimeGaussians/splaTV (flame = backyard BBQ at night, sear = indoor
+kitchen chef), and Technicolor (birthday = party table, 659k splats).
+2-second clips @ 20 fps, plus the full juggle. "each frame gzip-9" = the sum
+of gzipping every .splat file individually (i.e. shipping gzipped frames);
+concatenated gzip is no better — gzip's 32 KB window can't see across 10 MB
+frames. splat4d rows are the default preset (±5 mm / ±4 / ±1/128 / ±2 %),
+bounds verified on every splat of every frame. Machine-readable copy:
+[benchmarks.json](benchmarks.json).
 
 | sequence | frames×splats | raw | each frame gzip-9 | concat gzip-9 | concat zstd-19 --long | splat4d (±5mm/±4) | vs gzip | splat4d +denoise |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
+| birthday_2s | 40×659,456 | 844 MB | 724 MB (1.17×) | 724 MB (1.17×) | 334 MB (2.5×) | **23.3 MB (36.3×)** | 31.1× smaller | 23.3 MB (36.3×) |
 | boxes_2s | 40×351,422 | 450 MB | 423 MB (1.06×) | 423 MB (1.06×) | 184 MB (2.5×) | **21.5 MB (20.9×)** | 19.7× smaller | 16.0 MB (28.2×) |
+| flame_2s | 40×333,824 | 427 MB | 367 MB (1.16×) | 367 MB (1.16×) | 146 MB (2.9×) | **10.4 MB (41.0×)** | 35.2× smaller | 10.4 MB (41.0×) |
 | juggle (full 7.5 s) | 150×336,568 | 1616 MB | 1515 MB (1.07×) | 1515 MB (1.07×) | 642 MB (2.5×) | **63.9 MB (25.3×)** | 23.7× smaller | 43.5 MB (37.1×) |
 | juggle_2s | 40×336,568 | 431 MB | 405 MB (1.06×) | 405 MB (1.06×) | 177 MB (2.4×) | **20.7 MB (20.8×)** | 19.5× smaller | 15.1 MB (28.6×) |
+| sear_2s | 40×108,544 | 139 MB | 119 MB (1.16×) | 119 MB (1.16×) | 47 MB (3.0×) | **5.8 MB (23.8×)** | 20.5× smaller | 5.8 MB (23.8×) |
 | softball_2s | 40×335,567 | 430 MB | 404 MB (1.06×) | 404 MB (1.06×) | 175 MB (2.4×) | **20.6 MB (20.9×)** | 19.6× smaller | 15.1 MB (28.5×) |
 | tennis_2s | 40×333,076 | 426 MB | 401 MB (1.06×) | 401 MB (1.06×) | 176 MB (2.4×) | **20.8 MB (20.5×)** | 19.3× smaller | 15.2 MB (28.0×) |
+
+Note the split: the CMU sequences carry heavy per-frame color noise (a
+training artifact of that dataset), which the default bound faithfully
+preserves — `--denoise-colors` buys them ~1.4×. The splaTV-derived scenes
+(flame/sear/birthday) have clean, stable colors, land at 24–41× out of the
+box, and gain nothing from denoising — confirming color noise, not the codec,
+limits the CMU numbers.
 
 ## splat4d results (this project)
 
