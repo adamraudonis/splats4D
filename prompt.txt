@@ -1,0 +1,21 @@
+Please make a 4D gaussian splat format that lossy compresses over time a series of .splat files (they can have timestamp metadata info somewhere) and makes them a single file that is hopefully much smaller taking advantage of the fact that for example background splats might not move or if they are moving, perhaps you can do some clever tricks assuming they are they same size, color etc and then have a smaller value for the offset.
+
+Please find on the internet some series of splats where the splat reference frame may be changing perhaps slightly overtime but we want to ideally have just one cumulative splat for the background and then leverage that to make a smaller single splat. Perhaps some person working at a table. I think I've seen some canonical cooking splat examples. There should be some of these in academia papers you can find.
+
+Please first before doing anything do extensive research on state of the art techniques for splat compression, formats and time series or 4D splats. 
+
+Ensure there is some tunable deterministic bounding of how accurate the splats should remain post this compression. Ex: +- 5mm position error etc, some max size diff, some binning of colors etc.
+
+It should take a series of antimatter 15 .splat files and then outputs a single .splat4d file
+
+Create a ThreeJS WEBGPU (IMPORTANT: Do not use WebGL) viewer that showcases this.
+
+Ensure you have a baseline, understand the theoretical minimum and then have quantifiable metrics for conversion time, loading time, input .splat file sizes, output file sizes.
+
+Similar to how H265 mp4 compression you may want to take some lessons from that with key frames etc.
+
+You're welcome to prototype things in Python, but the final conversion script should likely be written in Rust as performance is the entire point of this project. If it takes too long to convert that is a fail. If the size difference is not a massive improvement that is a fail. If in the threes webgpu app it takes too long to load that is a fail.
+
+For the webgpu threejs client side app it is probably important that you support some kind of streaming / chunking like YouTube as we do not want the user to wait long to view the splat. Even if the splat is like 2min long, ideally when viewing the preview it should load near instantly and clear show to the user what parts have loaded etc. Support seeking.
+
+Your overall goal is to push the state of the art in terms of the world's best 4D splat format and viewer.
