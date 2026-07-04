@@ -485,25 +485,35 @@ function sort(viewProj: Float32Array) {
     vz1 = viewProj[6],
     vz2 = viewProj[10];
   const depths = new Int32Array(n);
+  // depth range from VISIBLE splats only: invisible ones (alpha 0) can sit at
+  // wildly extrapolated positions and would collapse the bucket resolution of
+  // the real scene, mis-sorting transparency into streak artifacts
   let mn = Infinity,
     mx = -Infinity;
   for (let i = 0; i < n; i++) {
     const d = ((vz0 * posF[i * 4] + vz1 * posF[i * 4 + 1] + vz2 * posF[i * 4 + 2]) * 4096) | 0;
     depths[i] = d;
-    if (d < mn) mn = d;
-    if (d > mx) mx = d;
+    if (rgbaU[i] >>> 24 !== 0) {
+      if (d < mn) mn = d;
+      if (d > mx) mx = d;
+    }
+  }
+  if (mn > mx) {
+    mn = 0;
+    mx = 1;
   }
   const range = mx - mn || 1;
   const scale = 65535 / range;
   counts.fill(0);
   const buckets = new Uint16Array(n);
   for (let i = 0; i < n; i++) {
-    const b = ((depths[i] - mn) * scale) | 0;
+    let b = ((depths[i] - mn) * scale) | 0;
+    if (b < 0) b = 0;
+    else if (b > 65535) b = 65535;
     buckets[i] = b;
     counts[b]++;
   }
-  // back-to-front: far (large positive view-space z after proj row? we want descending depth)
-  // prefix sum from the FAR end so larger depth draws first
+  // back-to-front for over-blending: larger clip-z = farther, drawn first
   let acc = 0;
   for (let b = 65535; b >= 0; b--) {
     const c = counts[b];

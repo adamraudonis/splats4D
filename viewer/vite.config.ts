@@ -59,6 +59,9 @@ function serveFile(req: IncomingMessage, res: ServerResponse, file: string) {
   let end = st.size - 1;
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('Content-Type', 'application/octet-stream');
+  // dev server: files are regenerated in place at identical URLs — never let
+  // the browser serve stale splat data from its heuristic cache
+  res.setHeader('Cache-Control', 'no-store');
   if (range) {
     const m = /bytes=(\d*)-(\d*)/.exec(range);
     if (m) {

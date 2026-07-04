@@ -97,11 +97,14 @@ export function createSplatMesh(n: number, opts: SplatMeshOptions = {}): SplatMe
     const cam = (modelViewMatrix.mul(vec4(center, 1.0)) as any).toVar();
     const clip = (cameraProjectionMatrix.mul(cam) as any).toVar();
 
-    // cull behind camera / far outside frustum
+    // cull: behind camera, crossing the near plane (a splat center near the
+    // eye projects with a tiny divisor -> full-screen streak; the reference
+    // viewer culls these too), or far outside the frustum
     const ndcZ = clip.z.div(clip.w);
     const lim = clip.w.mul(1.3);
     const inside = clip.w
       .greaterThan(0.0)
+      .and(clip.z.greaterThan(0.0))
       .and(clip.x.abs().lessThan(lim))
       .and(clip.y.abs().lessThan(lim));
 
@@ -168,10 +171,11 @@ export function createSplatMesh(n: number, opts: SplatMeshOptions = {}): SplatMe
       const a0 = v3(dot(vc0, r0), dot(vc1, r0), dot(vc2, r0)).toVar();
       const a1 = v3(dot(vc0, r1), dot(vc1, r1), dot(vc2, r1)).toVar();
 
-      // cov2d entries + small low-pass dilation (reference viewers use ~0.075
-      // in true-covariance units; larger values visibly soften small splats)
-      const c00 = dot(a0, (Vrk as any).mul(a0)).add(0.075).toVar();
-      const c11 = dot(a1, (Vrk as any).mul(a1)).add(0.075).toVar();
+      // cov2d entries — NO dilation, NO compensation: exact parity with the
+      // reference antimatter15 rasterization (dilation without compensation
+      // brightens needles; compensation dims the small-splat fill light)
+      const c00 = dot(a0, (Vrk as any).mul(a0)).toVar();
+      const c11 = dot(a1, (Vrk as any).mul(a1)).toVar();
       const c01 = dot(a0, (Vrk as any).mul(a1)).toVar();
 
       const mid = c00.add(c11).mul(0.5).toVar();
@@ -181,9 +185,18 @@ export function createSplatMesh(n: number, opts: SplatMeshOptions = {}): SplatMe
       const lambda2 = mid.sub(radius).toVar();
 
       If(lambda2.greaterThan(0.0), () => {
-        const diag = normalize(vec2(c01, lambda1.sub(c00))).toVar();
-        const major = min(sqrt(lambda1.mul(2.0)), 1024.0).mul(diag).toVar();
-        const minor = min(sqrt(lambda2.mul(2.0)), 1024.0)
+        // eigenvector of λ1. The single-form (c01, λ1−c00) is ill-conditioned
+        // when the major axis is x-aligned (both terms ≈ 0 → normalize() of
+        // float noise → splat flips 90°). Both algebraic forms are parallel;
+        // pick whichever has the larger norm — always well-conditioned.
+        const evA = vec2(lambda1.sub(c11), c01);
+        const evB = vec2(c01, lambda1.sub(c00));
+        const diag = normalize(select(dot(evA, evA).greaterThan(dot(evB, evB)), evA, evB)).toVar();
+        // clamp so the on-screen HALF-EXTENT (corner = ±2 × axis) stays ≤1024px,
+        // matching the reference viewer — otherwise giant splats sprawl 2×
+        // farther and read as sharp streaks instead of contained blobs
+        const major = min(sqrt(lambda1.mul(2.0)), 512.0).mul(diag).toVar();
+        const minor = min(sqrt(lambda2.mul(2.0)), 512.0)
           .mul(vec2((diag as any).y, (diag as any).x.negate()))
           .toVar();
 

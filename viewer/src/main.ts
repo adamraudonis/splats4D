@@ -43,8 +43,11 @@ async function init() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.setClearColor(0x0b0d10);
-  // splat colors are sRGB and blended as-is (reference-viewer convention)
+  // splat colors are sRGB and blended as-is (reference-viewer convention):
+  // disable tone mapping AND the output linear->sRGB transform, otherwise
+  // already-sRGB splat colors get encoded twice and wash toward white
   renderer.toneMapping = THREE.NoToneMapping;
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   await renderer.init();
   const backend = (renderer as unknown as { backend: { isWebGPUBackend?: boolean } }).backend;
   if (backend.isWebGPUBackend !== true) {
@@ -175,6 +178,47 @@ async function init() {
     };
     (window as unknown as Record<string, unknown>).__play = (p: boolean) => setPlaying(p);
     (window as unknown as Record<string, unknown>).__compare = (on: boolean) => setCompare(on);
+    (window as unknown as Record<string, unknown>).__sortCheck = () => {
+      const vp = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
+      const s = splats!;
+      const d = (i: number) =>
+        vp[2] * s.posArr[i * 4] + vp[6] * s.posArr[i * 4 + 1] + vp[10] * s.posArr[i * 4 + 2];
+      const n = s.sortArr.length;
+      let inversions = 0;
+      let maxInv = 0;
+      let bigInv = 0; // inversions larger than ~10 buckets
+      let prev = d(s.sortArr[0]);
+      let mn = Infinity;
+      let mx = -Infinity;
+      for (let k = 0; k < n; k++) {
+        const cur = d(s.sortArr[k]);
+        if (cur < mn) mn = cur;
+        if (cur > mx) mx = cur;
+        if (k > 0) {
+          const inv = cur - prev;
+          if (inv > 0) {
+            inversions++;
+            if (inv > maxInv) maxInv = inv;
+            if (inv > ((mx - mn) / 65536) * 10) bigInv++;
+          }
+        }
+        prev = cur;
+      }
+      const bucket = (mx - mn) / 65536;
+      return { n, inversions, maxInv, bigInv, bucket, range: mx - mn };
+    };
+    (window as unknown as Record<string, unknown>).__proj = () => ({
+      proj: Array.from(camera.projectionMatrix.elements),
+      near: camera.near,
+      far: camera.far,
+      reversed: (renderer as unknown as { coordinateSystem?: number }).coordinateSystem,
+    });
+    (window as unknown as Record<string, unknown>).__dbg = (k: number) => ({
+      pos: Array.from(splats!.posArr.slice(k * 4, k * 4 + 4)),
+      scale: Array.from(splats!.scaleArr.slice(k * 4, k * 4 + 4)),
+      quat: splats!.quatArr[k].toString(16),
+      rgba: splats!.rgbaArr[k].toString(16),
+    });
 
     onResize();
     overlay.classList.add('hidden');
