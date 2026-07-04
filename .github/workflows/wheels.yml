@@ -1,7 +1,7 @@
 # Build splat4d wheels (native Rust CLI packaged via maturin bin bindings)
 # and publish to PyPI on version tags (v*) using PyPI trusted publishing.
 #
-# One-time setup on pypi.org (no secrets needed): project "splat4d" ->
+# One-time setup on pypi.org (no secrets needed): project "splats4d" ->
 # Publishing -> add GitHub publisher: owner adamraudonis, repo splats4D,
 # workflow wheels.yml, environment pypi.
 name: wheels

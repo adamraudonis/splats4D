@@ -3,7 +3,7 @@ requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "splat4d"
+name = "splats4d"
 description = "Compress a folder of .splat gaussian-splat frames into one streamable .splat4d file with deterministic error bounds (native Rust CLI)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,6 +21,6 @@ Repository = "https://github.com/adamraudonis/splats4D"
 Documentation = "https://adamraudonis.github.io/splats4D/"
 
 [tool.maturin]
-# ship the compiled Rust CLI binary inside the wheel — `pip install splat4d`
+# ship the compiled Rust CLI binary inside the wheel — `pip install splats4d`
 # puts the native `splat4d` executable on PATH; no Python shim, no bindings
 bindings = "bin"

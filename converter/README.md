@@ -3,10 +3,10 @@
 Compress a folder of [antimatter15 `.splat`](https://github.com/antimatter15/splat)
 gaussian-splat frames into **one small, streamable `.splat4d` file** with
 **deterministic, tunable error bounds**. This package ships the native Rust CLI —
-`pip install splat4d` puts the `splat4d` executable on your PATH.
+`pip install splats4d` puts the `splat4d` executable on your PATH.
 
 ```bash
-pip install splat4d
+pip install splats4d
 
 # defaults: --pos-mm 2 --color-levels 4 --rot-steps 0 (exact rotation) --scale-pct 2
 splat4d encode -i frames_dir -o scene.splat4d

@@ -109,7 +109,7 @@ Point the viewer at it with `?file=https://bucket.example.com/scene.splat4d`.
 
 ## Python package
 
-`pip install splat4d` — ships the native Rust CLI as a platform wheel (maturin
+`pip install splats4d` — ships the native Rust CLI (`splat4d`) as a platform wheel (maturin
 `bin` bindings): after install, the `splat4d` executable is on your PATH at
 full native speed. Same CLI as building from source:
 `splat4d encode -i frames_dir -o out.splat4d`. Packaging lives in
