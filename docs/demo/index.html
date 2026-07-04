@@ -54,6 +54,8 @@
       html.embed #bar { bottom: 8px; padding: 6px 10px; gap: 8px; border-radius: 8px;
         width: min(640px, calc(100% - 20px)); background: #12161bd9; }
       html.embed #bar button { transform: scale(0.9); }
+      html.embed #bar { max-width: calc(100% - 20px); }
+      html.embed #clock { font-size: 10px; }
       html.embed #compare-btn { display: none; }
       #play, #compare-btn { height: 34px; border-radius: 17px; border: 1px solid #2c3540;
         background: #161c23; color: var(--text); cursor: pointer; font-size: 13px;
@@ -63,8 +65,8 @@
       #compare-btn { padding: 0 12px; font-size: 11px; }
       #compare-btn.on { background: var(--accent); color: #06121f; border-color: var(--accent); }
       #play:hover, #compare-btn:hover { filter: brightness(1.2); }
-      #timeline { flex: 1; height: 26px; cursor: pointer; }
-      #clock { color: var(--dim); font-size: 11px; flex: none; min-width: 92px; text-align: right; }
+      #timeline { flex: 1 1 0; min-width: 0; height: 26px; cursor: pointer; }
+      #clock { color: var(--dim); font-size: 11px; flex: none; text-align: right; white-space: nowrap; }
 
       #divider { position: fixed; top: 0; bottom: 0; width: 0; display: none; z-index: 5; }
       #divider .line { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px;
@@ -87,7 +89,7 @@
         border-radius: 50%; animation: spin 0.8s linear infinite; }
       @keyframes spin { to { transform: rotate(360deg); } }
     </style>
-    <script type="module" crossorigin src="./assets/index-ccjQRnpI.js"></script>
+    <script type="module" crossorigin src="./assets/index-CiZB1898.js"></script>
   </head>
   <body>
     <div id="canvas-wrap"></div>

@@ -3,26 +3,42 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
 <title>.splat4d</title>
-<meta name="description" content=".splat4d — a streamable 4D gaussian splat format with deterministic, tunable error bounds. 16–58× smaller than raw, HTTP Range-native streaming, live WebGPU viewer." />
+<meta name="description" content=".splat4d — a streamable 4D gaussian splat format with tunable error bounds. 16–58× smaller than raw, HTTP Range-native streaming, live WebGPU viewer." />
 <meta property="og:title" content=".splat4d" />
-<meta property="og:description" content="A streamable 4D gaussian splat format with deterministic, tunable error bounds. 16–58× smaller than raw; streams and seeks over plain HTTP Range requests." />
+<meta property="og:description" content="A streamable 4D gaussian splat format with tunable error bounds. 16–58× smaller than raw; streams and seeks over plain HTTP Range requests." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://adamraudonis.github.io/splats4D/" />
 <link rel="icon" href="demo/favicon.svg" />
 <style>
   :root {
+    --bg: #fff;
     --text: #1b1f24;
     --dim: #6a737d;
     --line: #e6e8eb;
     --soft: #f6f8fa;
     --accent: #2f6feb;
     --btn: #363636;
+    --btn-text: #fff;
+    --shadow: 0 12px 40px rgba(20, 30, 50, 0.13);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101418;
+      --text: #d7dde3;
+      --dim: #8b949e;
+      --line: #262d35;
+      --soft: #171d24;
+      --accent: #58a6ff;
+      --btn: #21262d;
+      --btn-text: #e6edf3;
+      --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
   body {
-    background: #fff; color: var(--text);
+    background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Helvetica, Arial, sans-serif;
     font-size: 16.5px; line-height: 1.65;
     -webkit-font-smoothing: antialiased;
@@ -31,23 +47,22 @@
   code, pre { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
 
   /* ---- hero ---- */
-  header { text-align: center; padding: 64px 0 8px; }
+  header { text-align: center; padding: 60px 0 8px; }
   h1 {
     font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: clamp(40px, 7vw, 58px); font-weight: 700; letter-spacing: -0.03em; color: #111;
+    font-size: clamp(40px, 7vw, 58px); font-weight: 700; letter-spacing: -0.03em;
   }
   h1 .dot { color: var(--accent); }
-  .tagline { font-size: 19px; color: #444; margin: 14px auto 6px; max-width: 640px; }
-  .sub { font-size: 15px; color: var(--dim); margin-bottom: 26px; }
-  .sub code { background: var(--soft); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 13.5px; }
+  .tagline { font-size: 19px; color: var(--text); opacity: .85; margin: 14px auto 24px; max-width: 640px; }
   .btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
   .btn {
     display: inline-flex; align-items: center; gap: 7px;
-    background: var(--btn); color: #fff; text-decoration: none;
+    background: var(--btn); color: var(--btn-text); text-decoration: none;
+    border: 1px solid transparent;
     border-radius: 999px; padding: 8px 19px; font-size: 14.5px; font-weight: 500;
-    transition: background .15s ease;
+    transition: filter .15s ease;
   }
-  .btn:hover { background: #111; text-decoration: none; }
+  .btn:hover { filter: brightness(1.25); text-decoration: none; }
   .btn svg { width: 15px; height: 15px; fill: currentColor; }
   .stats { font-size: 14px; color: var(--dim); margin: 18px 0 6px; }
   .stats b { color: var(--text); font-weight: 600; }
@@ -58,16 +73,29 @@
     position: relative; width: 100%; aspect-ratio: 16 / 9.6;
     border-radius: 14px; overflow: hidden; background: #0b0d10;
     border: 1px solid var(--line);
-    box-shadow: 0 12px 40px rgba(20, 30, 50, 0.13);
+    box-shadow: var(--shadow);
   }
-  .preview iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .preview iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
+    pointer-events: none; /* page scroll wins until the user opts in */ }
+  .preview .frame.live iframe { pointer-events: auto; }
+  #interact {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(18, 22, 27, 0.85); color: #e6edf3;
+    border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 999px;
+    padding: 7px 14px; font-size: 13px; font-weight: 500; line-height: 1; font-family: inherit;
+    cursor: pointer; backdrop-filter: blur(6px);
+  }
+  #interact:hover { background: rgba(30, 36, 44, 0.95); }
+  #interact svg { width: 14px; height: 14px; fill: currentColor; }
+  .frame.live #interact { background: var(--accent); border-color: var(--accent); color: #fff; }
   .caption { text-align: center; font-size: 13.5px; color: var(--dim); margin-top: 12px; }
   .caption b { color: var(--text); font-weight: 600; }
 
   /* ---- sections ---- */
   section { margin-top: 64px; }
-  h2 { font-size: 26px; font-weight: 700; text-align: center; color: #111; margin-bottom: 18px; letter-spacing: -0.01em; }
-  h3 { font-size: 17px; font-weight: 650; color: #111; margin: 30px 0 8px; }
+  h2 { font-size: 26px; font-weight: 700; text-align: center; margin-bottom: 18px; letter-spacing: -0.01em; }
+  h3 { font-size: 17px; font-weight: 650; margin: 30px 0 8px; }
   p { margin: 10px 0; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -84,15 +112,36 @@
   table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 13.8px; }
   th, td { border: 1px solid var(--line); padding: 7px 11px; text-align: right; white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
-  th { background: var(--soft); color: #111; font-weight: 600; }
+  th { background: var(--soft); font-weight: 600; }
   td b { color: var(--accent); font-weight: 650; }
   .tablewrap { overflow-x: auto; }
+  table.wrap-ok th, table.wrap-ok td { white-space: normal; }
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 18px 0; }
   .card { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; font-size: 14.5px; }
   .card h3 { margin: 0 0 6px; font-size: 15.5px; }
 
   .foot { margin-top: 80px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; text-align: center; }
+
+  /* ---- mobile ---- */
+  @media (max-width: 640px) {
+    body { font-size: 15.5px; }
+    .wrap { padding: 0 16px 60px; }
+    header { padding: 36px 0 4px; }
+    .tagline { font-size: 16.5px; margin: 10px auto 18px; }
+    .btns { gap: 7px; }
+    .btn { padding: 6px 13px; font-size: 13px; gap: 5px; }
+    .btn svg { width: 13px; height: 13px; }
+    .stats { font-size: 12.5px; }
+    .preview .frame { border-radius: 10px; aspect-ratio: 4 / 3.4; }
+    section { margin-top: 44px; }
+    h2 { font-size: 22px; }
+    h3 { font-size: 15.5px; margin: 22px 0 6px; }
+    pre { padding: 12px 13px; font-size: 12px; border-radius: 8px; }
+    table { font-size: 12.3px; }
+    th, td { padding: 6px 8px; }
+    .card { padding: 13px 14px; font-size: 13.5px; }
+  }
 </style>
 </head>
 <body>
@@ -100,8 +149,7 @@
 
 <header>
   <h1><span class="dot">.</span>splat4d</h1>
-  <div class="tagline">A streamable 4D gaussian splat format with deterministic, tunable error bounds.</div>
-  <div class="sub">A time series of antimatter15 <code>.splat</code> frames &rarr; one small, seekable file.</div>
+  <div class="tagline">A streamable 4D gaussian splat format with tunable bounds.</div>
 
   <div class="btns">
     <a class="btn" href="https://github.com/adamraudonis/splats4D">
@@ -133,34 +181,22 @@
 </header>
 
 <div class="preview">
-  <div class="frame">
+  <div class="frame" id="preview-frame">
     <iframe src="demo/?file=hero.splat4d&embed=1&cam=0,-0.4,-1.9,0.5,0.1,2,42"
             title="live .splat4d preview" allow="fullscreen"></iframe>
+    <button id="interact" type="button" aria-pressed="false">
+      <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M8 0 5.9 3.6h1.35v3.05H4.2V5.3L.6 7.4l3.6 2.1V8.15h3.05v3.05H5.9L8 14.8l2.1-3.6H8.75V8.15h3.05v1.35l3.6-2.1-3.6-2.1v1.35H8.75V3.6h1.35L8 0z"/></svg>
+      <span id="interact-label">Interact</span>
+    </button>
   </div>
   <div class="caption">
     Live preview, streamed and decoded in your browser: a 2-second dynamic scene as one <b>7.4&nbsp;MB</b>
     <code>.splat4d</code> file &mdash; <b>58&times;</b> smaller than its 427&nbsp;MB of raw <code>.splat</code> frames.
-    Drag to orbit, ctrl-scroll to zoom. Needs WebGPU (Chrome 113+, Safari 26+, Firefox 141+ on Windows) &mdash;
+    Press <b>Interact</b> to take the camera: drag to orbit, ctrl-scroll to zoom.
+    Needs WebGPU (Chrome 113+, Safari 26+, Firefox 141+ on Windows) &mdash;
     <a href="demo/">open the full demo</a> for more scenes and live encoding controls.
   </div>
 </div>
-
-<section>
-<h2>The guarantee</h2>
-<p>Every attribute of every splat in every decoded frame is within a user-chosen bound of the source &mdash;
-not on average, not in PSNR: pointwise and deterministic.</p>
-<div class="tablewrap"><table>
-<tr><th>attribute</th><th>bound</th><th>default</th></tr>
-<tr><td>position</td><td>&plusmn; millimeters, L&infin; per axis</td><td>&plusmn;2 mm</td></tr>
-<tr><td>color RGB</td><td>&plusmn; 8-bit levels per channel</td><td>&plusmn;4/255</td></tr>
-<tr><td>opacity</td><td>&plusmn; 8-bit levels</td><td>&plusmn;4/255</td></tr>
-<tr><td>rotation</td><td>&plusmn; quaternion component (units of 1/128, up to sign)</td><td>exact (&plusmn;0)</td></tr>
-<tr><td>scale</td><td>&plusmn; relative %, per axis</td><td>&plusmn;2%</td></tr>
-</table></div>
-<p class="dim">Mechanism: SZ/ZFP-style error-bounded quantization (step = 2&times;bound &rArr; error &le; bound by
-construction). After quantization everything is integer math &mdash; temporal deltas can never drift, and the
-Rust and JavaScript decoders reconstruct bit-identical values.</p>
-</section>
 
 <section>
 <h2>How it works</h2>
@@ -187,15 +223,37 @@ Rust and JavaScript decoders reconstruct bit-identical values.</p>
   stream. Output lands at &asymp;100% of the order-0 entropy of its own symbol streams.</div>
 </div>
 
-<h3>Container layout</h3>
-<pre><code>magic "SP4D" &middot; version &middot; flags &middot; header JSON (bounds, steps, GOP index with absolute byte ranges)
-STATIC section   &mdash; masks + base values for all splats (fetch once &rarr; full first view)
-GOP chunk 0      &mdash; [keys&hellip;][deltas&hellip;]  (independently decodable, ~1s of video)
-GOP chunk 1      &mdash; &hellip;</code></pre>
+<h3>Inside the file</h3>
+<p>A <code>.splat4d</code> file has three parts. A small header carries the bounds, the quantization
+steps, and a chunk index with absolute byte ranges &mdash; everything a client needs to plan its
+fetches. The static section holds the per-splat masks and base values: fetch it once and the complete
+scene is on screen. The rest is one self-contained GOP chunk per ~1&nbsp;s of video, with key streams
+laid out before delta streams.</p>
+<pre><code>"SP4D" + header JSON
+STATIC section     &rarr; full first view
+GOP chunk 0        [keys][deltas]
+GOP chunk 1        &hellip;</code></pre>
 </section>
 
 <section>
-<h2>Streaming from an object store</h2>
+<h2>Error bounds</h2>
+<p>Every attribute of every splat in every decoded frame is within a user-chosen bound of the source &mdash;
+not on average, not in PSNR: pointwise and deterministic.</p>
+<div class="tablewrap"><table class="wrap-ok">
+<tr><th>attribute</th><th>bound</th><th>default</th></tr>
+<tr><td>position</td><td>&plusmn; millimeters, L&infin; per axis</td><td>&plusmn;2 mm</td></tr>
+<tr><td>color RGB</td><td>&plusmn; 8-bit levels per channel</td><td>&plusmn;4/255</td></tr>
+<tr><td>opacity</td><td>&plusmn; 8-bit levels</td><td>&plusmn;4/255</td></tr>
+<tr><td>rotation</td><td>&plusmn; quaternion component (units of 1/128, up to sign)</td><td>exact (&plusmn;0)</td></tr>
+<tr><td>scale</td><td>&plusmn; relative %, per axis</td><td>&plusmn;2%</td></tr>
+</table></div>
+<p class="dim">Mechanism: SZ/ZFP-style error-bounded quantization (step = 2&times;bound &rArr; error &le; bound by
+construction). After quantization everything is integer math &mdash; temporal deltas can never drift, and the
+Rust and JavaScript decoders reconstruct bit-identical values.</p>
+</section>
+
+<section>
+<h2>Stream from object store</h2>
 <p>The format is designed for plain HTTP <b>Range</b> requests against S3 / GCS / R2 / any static host &mdash;
 no server logic, no manifest files, no video container. A client needs exactly:</p>
 <ul>
@@ -223,30 +281,16 @@ juggle, boxes, softball, tennis), Neu3D cooking scenes via
 SpacetimeGaussians/<a href="https://github.com/antimatter15/splaTV">splaTV</a> (flame = backyard
 BBQ, sear = kitchen chef), and Technicolor (birthday party, 659k splats) &mdash; all converted to
 per-frame antimatter15 <code>.splat</code> files (32 B/splat), 20 fps. splat4d encodes use default
-bounds (&plusmn;2 mm / &plusmn;4 color / exact rot / &plusmn;2% scale). gzip is <code>-9</code>.
-Encoded on a 10-core Apple-Silicon laptop.</p>
+bounds (&plusmn;2 mm / &plusmn;4 color / exact rot / &plusmn;2% scale); gzip is per-frame <code>-9</code>.
+For context, the best generic lossless baseline (zstd-19 <code>--long</code> over the whole series)
+reaches only 2.5&times;. Full methodology and more baselines:
+<a href="https://github.com/adamraudonis/splats4D/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
 <div class="tablewrap" id="bench-tables"><p class="dim">loading benchmarks.json&hellip;</p></div>
-
-<h3>Rate / bounds trade-off (juggle, full 7.5 s, 150&times;336,568 splats, 1,615 MB raw)</h3>
-<div class="tablewrap"><table>
-<tr><th>preset</th><th>bounds pos/color/rot/scale</th><th>size</th><th>ratio</th><th>encode</th></tr>
-<tr><td>fine</td><td>&plusmn;2mm / &plusmn;2 / exact / &plusmn;1%</td><td>93.9 MB</td><td>17.2&times;</td><td>2.2 s</td></tr>
-<tr><td><b>default</b></td><td>&plusmn;2mm / &plusmn;4 / exact / &plusmn;2%</td><td><b>83.4 MB</b></td><td><b>19.4&times;</b></td><td><b>2.5 s</b></td></tr>
-<tr><td>default, max effort (--zstd-level 0)</td><td>same</td><td>75.1 MB</td><td>21.5&times;</td><td>9.8 s</td></tr>
-<tr><td>default + denoise</td><td>same, vs median-5 colors</td><td>63.2 MB</td><td>25.6&times;</td><td>1.5 s</td></tr>
-<tr><td>relaxed</td><td>&plusmn;5mm / &plusmn;4 / &plusmn;1 / &plusmn;2%</td><td>72.0 MB</td><td>22.4&times;</td><td>1.0 s</td></tr>
-<tr><td>coarse</td><td>&plusmn;10mm / &plusmn;8 / &plusmn;2 / &plusmn;5%</td><td>58.2 MB</td><td>27.8&times;</td><td>1.1 s</td></tr>
-<tr><td><b>coarse + denoise</b></td><td>same, vs median-5 colors</td><td><b>40.9 MB</b></td><td><b>39.5&times;</b></td><td>1.3 s</td></tr>
-</table></div>
-<p class="dim">All rows at the default effort (zstd 3) unless noted. Context: the best generic lossless
-baseline (zstd-19 --long over the concatenated series) reaches only 2.5&times;. Published 4D codecs reach
-40&ndash;67&times; on this data class, but with no pointwise error guarantee, no byte-range seeking, and
-(usually) GPU optimization in the loop.</p>
 
 <h3>Viewer</h3>
 <p class="dim">Raw WebGPU, a line-by-line port of the
 <a href="https://github.com/antimatter15/splat">antimatter15/splat</a> renderer, pixel-verified against it.</p>
-<div class="tablewrap"><table>
+<div class="tablewrap"><table class="wrap-ok">
 <tr><th>metric</th><th>local</th><th>throttled 50 Mbps</th></tr>
 <tr><td>full first view (header + static section)</td><td>141&ndash;157 ms</td><td>791 ms</td></tr>
 <tr><td>scrub into unbuffered region &rarr; keyframe visible</td><td>&mdash;</td><td>145 ms</td></tr>
@@ -256,6 +300,7 @@ baseline (zstd-19 --long over the concatenated series) reaches only 2.5&times;. 
 
 <section>
 <h2>Using it</h2>
+<p>A time series of antimatter15 <code>.splat</code> frames &rarr; one small, seekable file:</p>
 <pre><code># Python (pip install splats4d)
 splat4d encode -i frames_dir -o out.splat4d</code></pre>
 </section>
@@ -267,26 +312,38 @@ SZ/ZFP (error-bounded quantization), H.264/H.265 (GOP structure), SPZ/SOGS (attr
 </div>
 
 <script>
+// hero interactivity is opt-in so page scrolling never fights the 3D camera
+{
+  const frame = document.getElementById('preview-frame');
+  const btn = document.getElementById('interact');
+  const label = document.getElementById('interact-label');
+  btn.addEventListener('click', () => {
+    const live = frame.classList.toggle('live');
+    btn.setAttribute('aria-pressed', String(live));
+    label.textContent = live ? 'Done' : 'Interact';
+  });
+}
+
 fetch('benchmarks.json').then(r => r.json()).then(({ sequences, generated }) => {
-  const fmt = (b) => (b / 1e6).toFixed(1) + ' MB';
+  const compact = matchMedia('(max-width: 640px)').matches;
+  const mb = (b) => (b / 1e6).toFixed(b < 1e8 ? 1 : 0) + (compact ? '' : ' MB');
   const x = (raw, b) => (raw / b).toFixed(1) + '×';
-  let html = '<table><tr><th>sequence</th><th>frames × splats</th><th>raw</th>' +
-    '<th>each .splat gzip-9</th><th>concat gzip-9</th><th>concat zstd-19 --long</th>' +
-    '<th>splat4d</th><th>vs gzip</th><th>splat4d +denoise</th><th>encode</th></tr>';
+  const k = (n) => n >= 1e5 ? Math.round(n / 1e3) + 'k' : n.toLocaleString();
+  const unit = compact ? ' (MB)' : '';
+  let html = `<table><tr><th>sequence</th>${compact ? '' : '<th>frames × splats</th>'}<th>raw${unit}</th>` +
+    `<th>gzip${unit}</th><th>splat4d${unit}</th></tr>`;
   for (const r of sequences) {
-    const d = r.splat4d_default, dn = r.splat4d_denoised;
-    html += `<tr><td>${r.seq.replace(/_2s$/, '')} · ${(r.frames / r.fps).toFixed(1)}s</td>` +
-      `<td>${r.frames} × ${r.splats.toLocaleString()}</td>` +
-      `<td>${fmt(r.raw_bytes)}</td>` +
-      `<td>${fmt(r.gzip_per_frame_bytes)} (${x(r.raw_bytes, r.gzip_per_frame_bytes)})</td>` +
-      `<td>${fmt(r.gzip_concat_bytes)} (${x(r.raw_bytes, r.gzip_concat_bytes)})</td>` +
-      `<td>${fmt(r.zstd19_long_bytes)} (${x(r.raw_bytes, r.zstd19_long_bytes)})</td>` +
-      `<td><b>${fmt(d.bytes)} (${x(r.raw_bytes, d.bytes)})</b></td>` +
-      `<td><b>${(r.gzip_per_frame_bytes / d.bytes).toFixed(1)}× smaller</b></td>` +
-      `<td>${fmt(dn.bytes)} (${x(r.raw_bytes, dn.bytes)})</td>` +
-      `<td>${d.encode_s.toFixed(1)} s</td></tr>`;
+    const d = r.splat4d_default;
+    const fxs = `${r.frames} × ${k(r.splats)}`;
+    const seq = r.seq.replace(/_2s$/, '');
+    html += compact
+      ? `<tr><td>${seq}<div class="dim" style="font-size:10.5px">${fxs}</div></td>`
+      : `<tr><td>${seq} · ${(r.frames / r.fps).toFixed(1)}s</td><td>${fxs}</td>`;
+    html += `<td>${mb(r.raw_bytes)}</td>` +
+      `<td>${mb(r.gzip_per_frame_bytes)}</td>` +
+      `<td><b>${mb(d.bytes)} (${x(r.raw_bytes, d.bytes)})</b></td></tr>`;
   }
-  html += '</table><p class="dim">generated ' + generated + ' · encode times include the verification pass</p>';
+  html += '</table><p class="dim">generated ' + generated + '</p>';
   document.getElementById('bench-tables').innerHTML = html;
 }).catch(() => {
   document.getElementById('bench-tables').innerHTML =

@@ -494,6 +494,14 @@ async function init() {
   // ---- timeline / transport ----
   function drawTimeline() {
     if (!meta) return;
+    // keep the drawing buffer matched to the displayed size (the bar is
+    // responsive; a fixed buffer squashes the rounded caps and playhead)
+    const bw = Math.max(1, Math.round(timeline.clientWidth * 2));
+    const bh = Math.max(1, Math.round(timeline.clientHeight * 2));
+    if (timeline.width !== bw || timeline.height !== bh) {
+      timeline.width = bw;
+      timeline.height = bh;
+    }
     const w = timeline.width;
     const h = timeline.height;
     tctx.clearRect(0, 0, w, h);
