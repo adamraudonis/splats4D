@@ -181,6 +181,8 @@ self.onmessage = (e: MessageEvent) => {
     } else if (m.type === 'return') {
       const pool = pools[m.kind];
       if (pool && pool.length < 4) pool.push(m.buffer);
+    } else if (m.type === 'dump') {
+      post({ type: 'dump', stats: dumpStats() });
     }
   } catch (err) {
     post({ type: 'error', message: String(err) });
@@ -616,6 +618,38 @@ function runSort(viewProj: Float32Array) {
   lastProj = viewProj.slice(0);
   lastSortedFrame = curFrame;
   post({ type: 'sorted', indices: ib, count: vertexCount, sortMs: performance.now() - t0 }, [ib]);
+}
+
+// ---- diagnostics -----------------------------------------------------------
+function halfToFloat(h: number): number {
+  const s = (h & 0x8000) ? -1 : 1;
+  const e = (h >> 10) & 0x1f;
+  const f = h & 0x3ff;
+  if (e === 0) return s * f * 2 ** -24;
+  if (e === 31) return f ? NaN : s * Infinity;
+  return s * (1 + f / 1024) * 2 ** (e - 15);
+}
+
+function dumpStats() {
+  if (!header || !texdata) return null;
+  const n = header.n;
+  let maxSigma = 0, nanSigma = 0, maxAbsPos = 0, badPos = 0;
+  for (let i = 0; i < n; i++) {
+    for (let w = 4; w <= 6; w++) {
+      const v = texdata[8 * i + w];
+      for (const h of [v & 0xffff, v >>> 16]) {
+        const f = halfToFloat(h);
+        if (Number.isNaN(f) || !Number.isFinite(f)) nanSigma++;
+        else if (Math.abs(f) > maxSigma) maxSigma = Math.abs(f);
+      }
+    }
+    for (let k = 0; k < 3; k++) {
+      const p = texF[8 * i + k];
+      if (!Number.isFinite(p)) badPos++;
+      else if (Math.abs(p) > maxAbsPos) maxAbsPos = Math.abs(p);
+    }
+  }
+  return { n, curFrame, maxSigma, nanSigma, maxAbsPos, badPos, dirtyRowStart, texHeight };
 }
 
 // ---- compare: original .splat frame -> full texture -----------------------

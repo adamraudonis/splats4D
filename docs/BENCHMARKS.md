@@ -33,25 +33,25 @@ kitchen chef), and Technicolor (birthday = party table, 659k splats).
 2-second clips @ 20 fps, plus the full juggle. "each frame gzip-9" = the sum
 of gzipping every .splat file individually (i.e. shipping gzipped frames);
 concatenated gzip is no better — gzip's 32 KB window can't see across 10 MB
-frames. splat4d rows are the default preset (±5 mm / ±4 / ±1/128 / ±2 %),
-bounds verified on every splat of every frame. Machine-readable copy:
-[benchmarks.json](benchmarks.json).
+frames. splat4d rows are the default preset (±2 mm / ±4 / rot exact / ±2 %,
+zstd 3), bounds verified on every splat of every frame. Machine-readable
+copy: [benchmarks.json](benchmarks.json).
 
-| sequence | frames×splats | raw | each frame gzip-9 | concat gzip-9 | concat zstd-19 --long | splat4d (±5mm/±4) | vs gzip | splat4d +denoise |
+| sequence | frames×splats | raw | each frame gzip-9 | concat gzip-9 | concat zstd-19 --long | splat4d (default) | vs gzip | splat4d +denoise |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| birthday_2s | 40×659,456 | 844 MB | 724 MB (1.17×) | 724 MB (1.17×) | 334 MB (2.5×) | **23.3 MB (36.3×)** | 31.1× smaller | 23.3 MB (36.3×) |
-| boxes_2s | 40×351,422 | 450 MB | 423 MB (1.06×) | 423 MB (1.06×) | 184 MB (2.5×) | **21.5 MB (20.9×)** | 19.7× smaller | 16.0 MB (28.2×) |
-| flame_2s | 40×333,824 | 427 MB | 367 MB (1.16×) | 367 MB (1.16×) | 146 MB (2.9×) | **10.4 MB (41.0×)** | 35.2× smaller | 10.4 MB (41.0×) |
-| juggle (full 7.5 s) | 150×336,568 | 1616 MB | 1515 MB (1.07×) | 1515 MB (1.07×) | 642 MB (2.5×) | **63.9 MB (25.3×)** | 23.7× smaller | 43.5 MB (37.1×) |
-| juggle_2s | 40×336,568 | 431 MB | 405 MB (1.06×) | 405 MB (1.06×) | 177 MB (2.4×) | **20.7 MB (20.8×)** | 19.5× smaller | 15.1 MB (28.6×) |
-| sear_2s | 40×108,544 | 139 MB | 119 MB (1.16×) | 119 MB (1.16×) | 47 MB (3.0×) | **5.8 MB (23.8×)** | 20.5× smaller | 5.8 MB (23.8×) |
-| softball_2s | 40×335,567 | 430 MB | 404 MB (1.06×) | 404 MB (1.06×) | 175 MB (2.4×) | **20.6 MB (20.9×)** | 19.6× smaller | 15.1 MB (28.5×) |
-| tennis_2s | 40×333,076 | 426 MB | 401 MB (1.06×) | 401 MB (1.06×) | 176 MB (2.4×) | **20.8 MB (20.5×)** | 19.3× smaller | 15.2 MB (28.0×) |
+| birthday_2s | 40×659,456 | 844 MB | 724 MB (1.17×) | 724 MB (1.17×) | 334 MB (2.5×) | **40.7 MB (20.7×)** | 17.8× smaller | 40.7 MB (20.7×) |
+| boxes_2s | 40×351,422 | 450 MB | 423 MB (1.06×) | 423 MB (1.06×) | 184 MB (2.5×) | **27.2 MB (16.5×)** | 15.5× smaller | 21.7 MB (20.7×) |
+| flame_2s | 40×333,824 | 427 MB | 367 MB (1.16×) | 367 MB (1.16×) | 146 MB (2.9×) | **18.5 MB (23.2×)** | 19.9× smaller | 18.5 MB (23.2×) |
+| juggle (full 7.5 s) | 150×336,568 | 1616 MB | 1515 MB (1.07×) | 1515 MB (1.07×) | 642 MB (2.5×) | **83.4 MB (19.4×)** | 18.2× smaller | 63.2 MB (25.6×) |
+| juggle_2s | 40×336,568 | 431 MB | 405 MB (1.06×) | 405 MB (1.06×) | 177 MB (2.4×) | **26.1 MB (16.5×)** | 15.5× smaller | 20.7 MB (20.8×) |
+| sear_2s | 40×108,544 | 139 MB | 119 MB (1.16×) | 119 MB (1.16×) | 47 MB (3.0×) | **8.2 MB (16.9×)** | 14.5× smaller | 8.2 MB (16.9×) |
+| softball_2s | 40×335,567 | 430 MB | 404 MB (1.06×) | 404 MB (1.06×) | 175 MB (2.4×) | **25.9 MB (16.6×)** | 15.6× smaller | 20.6 MB (20.8×) |
+| tennis_2s | 40×333,076 | 426 MB | 401 MB (1.06×) | 401 MB (1.06×) | 176 MB (2.4×) | **26.2 MB (16.3×)** | 15.3× smaller | 20.9 MB (20.4×) |
 
 Note the split: the CMU sequences carry heavy per-frame color noise (a
 training artifact of that dataset), which the default bound faithfully
-preserves — `--denoise-colors` buys them ~1.4×. The splaTV-derived scenes
-(flame/sear/birthday) have clean, stable colors, land at 24–41× out of the
+preserves — `--denoise-colors` buys them ~1.3×. The splaTV-derived scenes
+(flame/sear/birthday) have clean, stable colors, land at 17–23× out of the
 box, and gain nothing from denoising — confirming color noise, not the codec,
 limits the CMU numbers.
 
@@ -59,23 +59,24 @@ limits the CMU numbers.
 
 | preset | bounds (pos / color / rot / scale) | size | ratio | encode time* |
 |---|---|---:|---:|---:|
-| fine | ±2 mm / ±2 lvl / lossless / ±1 % | 86.2 MB | 18.7× | 10.8 s |
-| **default** | ±5 mm / ±4 lvl / ±1/128 / ±2 % | **63.9 MB** | **25.3×** | 11.6 s |
-| default, `--zstd-level 19` | ±5 mm / ±4 / ±1/128 / ±2 % | 60.2 MB | 26.9× | 31.9 s |
-| default + `--denoise-colors` | same, vs median-5 color reference | 43.5 MB | 37.1× | 8.4 s |
-| coarse | ±10 mm / ±8 lvl / ±2/128 / ±5 % | 50.5 MB | 32.0× | 10.1 s |
-| **coarse + denoise** | same, vs median-5 color reference | **33.4 MB** | **48.3×** | 7.9 s |
+| fine | ±2 mm / ±2 lvl / exact / ±1 % | 93.9 MB | 17.2× | 2.2 s |
+| **default** | ±2 mm / ±4 lvl / exact / ±2 % | **83.4 MB** | **19.4×** | **2.5 s** |
+| default, max effort (`--zstd-level 0` = 19/13 auto) | same | 75.1 MB | 21.5× | 9.8 s |
+| default + `--denoise-colors` | same, vs median-5 color reference | 63.2 MB | 25.6× | 1.5 s |
+| relaxed | ±5 mm / ±4 lvl / ±1/128 / ±2 % | 72.0 MB | 22.4× | 1.0 s |
+| coarse | ±10 mm / ±8 lvl / ±2/128 / ±5 % | 58.2 MB | 27.8× | 1.1 s |
+| **coarse + denoise** | same, vs median-5 color reference | **40.9 MB** | **39.5×** | 1.3 s |
 
-\* wall-clock on 10 cores, excluding the optional verification pass (+0.8 s).
-Throughput at default: **~132–157 MB/s of input**; peak RSS 4.1 GB.
-The transform pipeline alone (no entropy coding) runs at 1.7 GB/s — encode
-time is ~95 % zstd.
+\* wall-clock on 10 cores at the default effort (zstd 3) unless noted,
+excluding the optional verification pass. Throughput at default: **~640 MB/s
+of input**. The transform pipeline alone (no entropy coding) runs at
+1.7 GB/s; at max effort encode time is ~95 % zstd.
 
-Stream breakdown at default (63.9 MB): color deltas 47.7 MB (75 % — this
-dataset's colors carry heavy training noise), position deltas 4.2 MB,
-rotation deltas 4.4 MB, static base (full background + frame-0 state)
-3.78 MB, masks ~0.
-Static fractions: position 80.1 %, rotation 80.5 %, scale 100 %, opacity
+Stream breakdown at default (83.4 MB): color deltas 53.5 MB (64 % — this
+dataset's colors carry heavy training noise), rotation deltas 13.3 MB
+(rotation is stored exactly by default), position deltas 6.5 MB, GOP keys
+6.2 MB, static base (full background + frame-0 state) 4.0 MB, masks ~0.
+Static fractions: position 79.4 %, rotation 54.0 %, scale 100 %, opacity
 100 %, color 4.1 %.
 
 ## Theoretical minimum
@@ -83,11 +84,17 @@ Static fractions: position 80.1 %, rotation 80.5 %, scale 100 %, opacity
 Order-0 Shannon entropy of the emitted byte planes (the residual information
 after quantize → hold → temporal/spatial delta → zigzag → shuffle):
 
-| preset | entropy floor | actual | efficiency |
+At max effort (`--zstd-level 0`), which is where the back-end is meant to
+approach the floor:
+
+| preset | entropy floor | actual (max effort) | efficiency |
 |---|---:|---:|---:|
-| default | 66.3 MB | 63.9 MB | **104 %** (zstd's context modeling beats the order-0 bound) |
-| default + denoise | 43.4 MB | 43.5 MB | 100 % |
+| default | 81.5 MB | 75.1 MB | **108 %** (zstd's context modeling beats the order-0 bound) |
+| default + denoise | 58.5 MB | 54.7 MB | 107 % |
 | coarse + denoise | 31.5 MB | 33.4 MB | 94 % |
+
+(The default effort, zstd 3, lands at 98 % of the floor on the default
+preset — 83.4 vs 81.5 MB — while encoding 4× faster.)
 
 The codec is at (or beyond) the memoryless limit of its own symbol streams —
 further gains require better transforms (motion prediction, context/rANS
@@ -100,10 +107,10 @@ against the source; `splat4d verify` does the same standalone. Default preset:
 
 | attribute | bound | max observed error |
 |---|---|---|
-| position | ±5 mm | 5.000 mm ✓ |
+| position | ±2 mm | 2.000 mm ✓ |
 | color | ±4 levels | 4 ✓ |
 | opacity | ±4 levels | 0 ✓ |
-| rotation | ±1/128 per quat component | 1 ✓ |
+| rotation | exact (±0) | 0 ✓ |
 | scale | ±2 % relative | 0.995 % ✓ |
 
 Errors are structural maxima of the quantizer — never exceeded, by
@@ -144,7 +151,7 @@ Measured in Chrome, 336,568 splats:
 | time to full first view (header + 3.78 MB static section) | **141–157 ms** | **791 ms** |
 | seek into unbuffered region → keyframe on screen | — | **145 ms** |
 | seek into unbuffered region → exact frame | — | 2.5 s |
-| full 63.9 MB buffered | ~1 s | ~10.5 s |
+| full file buffered (measured on a 63.9 MB encode) | ~1 s | ~10.5 s |
 
 Runtime: **60–61 fps** during playback; worker frame decode 2.5–27 ms;
 worker depth sort (16-bit counting sort) 1–25 ms, triggered only on view

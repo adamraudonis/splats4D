@@ -209,7 +209,7 @@ def main():
         run_config(5, 2, 1, 2, weighted=beta, label=f"beta={beta}")
         run_config(5, 4, 1, 2, weighted=beta, label=f"beta={beta}")
 
-    print("\n---- GOP sensitivity at defaults ----")
+    print("\n---- GOP sensitivity at the sweep center (5,4,1,2 — the v1 defaults) ----")
     for g in [15, 30, 60, 150]:
         GOP = g
         run_config(5, 4, 1, 2, label=f"gop={g}")

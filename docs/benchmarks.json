@@ -11,34 +11,34 @@
    "gzip_concat_bytes": 724140885,
    "zstd19_long_bytes": 333794803,
    "splat4d_default": {
-    "bytes": 23277295,
-    "encode_s": 4.814324375,
-    "entropy_min_bytes": 22180527.718314487,
+    "bytes": 40679956,
+    "encode_s": 1.704667959,
+    "entropy_min_bytes": 32510015.308606427,
     "verify": {
      "alpha_levels": 4,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 2.000000000000224,
      "rgb_levels": 0,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9947322168900152
     },
     "static_fracs": {
      "alpha": 0.46584912412655277,
-     "pos": 0.3849384947593168,
+     "pos": 0.12660435267857142,
      "rgb": 1.0,
-     "rot": 0.18669024165372672,
+     "rot": 0.014108598602484472,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 23277294,
-    "encode_s": 4.055520417,
+    "bytes": 40679955,
+    "encode_s": 1.203103416,
     "verify": {
      "alpha_levels": 4,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 2.000000000000224,
      "rgb_levels": 0,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9947322168900152
     }
    }
@@ -53,34 +53,34 @@
    "gzip_concat_bytes": 422572201,
    "zstd19_long_bytes": 183566507,
    "splat4d_default": {
-    "bytes": 21492153,
-    "encode_s": 5.176497625,
-    "entropy_min_bytes": 22839624.85827639,
+    "bytes": 27199418,
+    "encode_s": 0.623528875,
+    "entropy_min_bytes": 28488960.994590014,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 4.999997615814267,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950461547710843
     },
     "static_fracs": {
      "alpha": 1.0,
-     "pos": 0.8533102651512996,
+     "pos": 0.8211039718628885,
      "rgb": 0.055426239677652506,
-     "rot": 0.8533188018962956,
+     "rot": 0.5906858420929822,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 15951539,
-    "encode_s": 3.2769582919999998,
+    "bytes": 21696435,
+    "encode_s": 0.550824625,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 4.999997615814267,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950461547710843
     }
    }
@@ -95,34 +95,34 @@
    "gzip_concat_bytes": 366994960,
    "zstd19_long_bytes": 146373317,
    "splat4d_default": {
-    "bytes": 10421927,
-    "encode_s": 2.525669209,
-    "entropy_min_bytes": 10072253.970767843,
+    "bytes": 18452656,
+    "encode_s": 0.690078917,
+    "entropy_min_bytes": 15081730.988011075,
     "verify": {
      "alpha_levels": 4,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 2.000000000000668,
      "rgb_levels": 0,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9947322168900152
     },
     "static_fracs": {
      "alpha": 0.6317400786042945,
-     "pos": 0.5099783119248467,
+     "pos": 0.16180382476993865,
      "rgb": 1.0,
-     "rot": 0.23379984662576686,
+     "rot": 0.01431892254601227,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 10421926,
-    "encode_s": 2.319641417,
+    "bytes": 18452655,
+    "encode_s": 0.605687042,
     "verify": {
      "alpha_levels": 4,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 2.000000000000668,
      "rgb_levels": 0,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9947322168900152
     }
    }
@@ -137,34 +137,34 @@
    "gzip_concat_bytes": 1514736413,
    "zstd19_long_bytes": 641976104,
    "splat4d_default": {
-    "bytes": 63896007,
-    "encode_s": 13.880705916,
-    "entropy_min_bytes": 66291642.18143578,
+    "bytes": 83393825,
+    "encode_s": 3.095113,
+    "entropy_min_bytes": 81452053.87571207,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950490895740627
     },
     "static_fracs": {
      "alpha": 1.0,
-     "pos": 0.8005514487414134,
+     "pos": 0.7942971405481211,
      "rgb": 0.040990230800313755,
-     "rot": 0.8048477573625538,
+     "rot": 0.5404940457797532,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 43501705,
-    "encode_s": 10.987009167,
+    "bytes": 63167305,
+    "encode_s": 2.60879825,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950490895740627
     }
    }
@@ -179,34 +179,34 @@
    "gzip_concat_bytes": 404782740,
    "zstd19_long_bytes": 176623989,
    "splat4d_default": {
-    "bytes": 20736110,
-    "encode_s": 4.635277625,
-    "entropy_min_bytes": 21699103.94764526,
+    "bytes": 26111874,
+    "encode_s": 0.596712208,
+    "entropy_min_bytes": 25476529.31093328,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 1.999999761581439,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950490895740627
     },
     "static_fracs": {
      "alpha": 1.0,
-     "pos": 0.8039890898718832,
+     "pos": 0.8014041738965083,
      "rgb": 0.05709693137790877,
-     "rot": 0.8049695752418531,
+     "rot": 0.5873077654441302,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 15070421,
-    "encode_s": 4.875662208,
+    "bytes": 20731488,
+    "encode_s": 0.545140708,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.0000000000001155,
+     "pos_mm": 1.999999761581439,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950490895740627
     }
    }
@@ -221,34 +221,34 @@
    "gzip_concat_bytes": 119452887,
    "zstd19_long_bytes": 46739089,
    "splat4d_default": {
-    "bytes": 5834361,
-    "encode_s": 1.552695458,
-    "entropy_min_bytes": 6005210.989504282,
+    "bytes": 8244789,
+    "encode_s": 0.225959167,
+    "entropy_min_bytes": 9164000.748433258,
     "verify": {
      "alpha_levels": 4,
      "ok": true,
-     "pos_mm": 5.000000000000782,
+     "pos_mm": 2.000000000000668,
      "rgb_levels": 0,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9947322168900152
     },
     "static_fracs": {
      "alpha": 0.5283755896226415,
-     "pos": 0.005573776533018868,
+     "pos": 0.002146594929245283,
      "rgb": 1.0,
-     "rot": 0.9871849204009434,
+     "rot": 0.9861622936320755,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 5834360,
-    "encode_s": 1.588361875,
+    "bytes": 8244788,
+    "encode_s": 0.187215458,
     "verify": {
      "alpha_levels": 4,
      "ok": true,
-     "pos_mm": 5.000000000000782,
+     "pos_mm": 2.000000000000668,
      "rgb_levels": 0,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9947322168900152
     }
    }
@@ -263,34 +263,34 @@
    "gzip_concat_bytes": 403603469,
    "zstd19_long_bytes": 175382703,
    "splat4d_default": {
-    "bytes": 20556455,
-    "encode_s": 4.042757791,
-    "entropy_min_bytes": 21900254.898265783,
+    "bytes": 25860129,
+    "encode_s": 0.601136042,
+    "entropy_min_bytes": 25695195.385231722,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.000000000000004,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950485757003413
     },
     "static_fracs": {
      "alpha": 1.0,
-     "pos": 0.8221368608951417,
+     "pos": 0.8193147717147395,
      "rgb": 0.058891368936754805,
-     "rot": 0.8232871527891599,
+     "rot": 0.6006520307419979,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 15085674,
-    "encode_s": 4.837461041,
+    "bytes": 20616019,
+    "encode_s": 0.527445459,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.000000000000004,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950485757003413
     }
    }
@@ -305,34 +305,34 @@
    "gzip_concat_bytes": 400778536,
    "zstd19_long_bytes": 175800304,
    "splat4d_default": {
-    "bytes": 20772386,
-    "encode_s": 3.552357208,
-    "entropy_min_bytes": 22353808.83643999,
+    "bytes": 26157610,
+    "encode_s": 0.585223375,
+    "entropy_min_bytes": 27058740.602273792,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.000000000000004,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950492505917508
     },
     "static_fracs": {
      "alpha": 1.0,
-     "pos": 0.841159375037529,
+     "pos": 0.8374905426989636,
      "rgb": 0.061211255088928655,
-     "rot": 0.842717577970193,
+     "rot": 0.6161356567269932,
      "scale": 1.0
     }
    },
    "splat4d_denoised": {
-    "bytes": 15233416,
-    "encode_s": 4.409740792,
+    "bytes": 20850596,
+    "encode_s": 0.518325959,
     "verify": {
      "alpha_levels": 0,
      "ok": true,
-     "pos_mm": 5.000000000000004,
+     "pos_mm": 2.0000000000000018,
      "rgb_levels": 4,
-     "rot_units": 1,
+     "rot_units": 0,
      "scale_pct": 0.9950492505917508
     }
    }

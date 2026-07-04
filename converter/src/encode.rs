@@ -369,15 +369,15 @@ pub fn front_end(frames: &mut Frames, bounds: &Bounds) -> FrontEnd {
 }
 
 /// Deadband hold-encoding of one dynamic attribute. Float variant.
-pub fn hold_f(vals: &[f32], t: usize, n: usize, c: usize, idx: &[u32], step: f64, eps: f64) -> Vec<i16> {
+pub fn hold_f(vals: &[f32], t: usize, n: usize, c: usize, idx: &[u32], step: f64, eps: f64) -> Vec<i32> {
     let nd = idx.len();
-    let mut held = vec![0i16; t * nd * c];
+    let mut held = vec![0i32; t * nd * c];
     // frame 0
     {
         let h0 = &mut held[..nd * c];
         h0.par_chunks_mut(c).zip(idx.par_iter()).for_each(|(h, &i)| {
             for k in 0..c {
-                h[k] = qf(vals[i as usize * c + k] as f64, step) as i16;
+                h[k] = qf(vals[i as usize * c + k] as f64, step);
             }
         });
     }
@@ -400,7 +400,7 @@ pub fn hold_f(vals: &[f32], t: usize, n: usize, c: usize, idx: &[u32], step: f64
                 }
                 if viol {
                     for k in 0..c {
-                        h[k] = qf(frame[base + k] as f64, step) as i16;
+                        h[k] = qf(frame[base + k] as f64, step);
                     }
                 } else {
                     h.copy_from_slice(hp);
@@ -411,14 +411,14 @@ pub fn hold_f(vals: &[f32], t: usize, n: usize, c: usize, idx: &[u32], step: f64
 }
 
 /// Deadband hold-encoding, integer variant (values already i32-representable).
-pub fn hold_i(get: &(dyn Fn(usize, usize, usize) -> i32 + Sync), t: usize, c: usize, idx: &[u32], step: i32, b: i32) -> Vec<i16> {
+pub fn hold_i(get: &(dyn Fn(usize, usize, usize) -> i32 + Sync), t: usize, c: usize, idx: &[u32], step: i32, b: i32) -> Vec<i32> {
     let nd = idx.len();
-    let mut held = vec![0i16; t * nd * c];
+    let mut held = vec![0i32; t * nd * c];
     {
         let h0 = &mut held[..nd * c];
         h0.par_chunks_mut(c).zip(idx.par_iter()).for_each(|(h, &i)| {
             for k in 0..c {
-                h[k] = qi(get(0, i as usize, k), step) as i16;
+                h[k] = qi(get(0, i as usize, k), step);
             }
         });
     }
@@ -432,14 +432,14 @@ pub fn hold_i(get: &(dyn Fn(usize, usize, usize) -> i32 + Sync), t: usize, c: us
             .for_each(|((h, hp), &i)| {
                 let mut viol = false;
                 for k in 0..c {
-                    if (get(ti, i as usize, k) - hp[k] as i32 * step).abs() > b {
+                    if (get(ti, i as usize, k) - hp[k] * step).abs() > b {
                         viol = true;
                         break;
                     }
                 }
                 if viol {
                     for k in 0..c {
-                        h[k] = qi(get(ti, i as usize, k), step) as i16;
+                        h[k] = qi(get(ti, i as usize, k), step);
                     }
                 } else {
                     h.copy_from_slice(hp);
@@ -522,7 +522,7 @@ pub fn encode(frames: &mut Frames, bounds: &Bounds, gop: usize, level: i32, deno
         name: String,
         raw: RawStream,
     }
-    let tracks: [(&str, u8, &Vec<i16>, usize, usize); 5] = [
+    let tracks: [(&str, u8, &Vec<i32>, usize, usize); 5] = [
         ("pos", ATTR_POS, &held_pos, idx_pos.len(), 3),
         ("rot", ATTR_ROT, &held_rot, idx_rot.len(), 4),
         ("rgb", ATTR_RGB, &held_rgb, idx_rgb.len(), 3),
@@ -540,14 +540,14 @@ pub fn encode(frames: &mut Frames, bounds: &Bounds, gop: usize, level: i32, deno
                     continue;
                 }
                 let ndc = nd * c;
-                let key: Vec<u32> = held[f0 * ndc..(f0 + 1) * ndc].iter().map(|&v| zigzag(v as i32)).collect();
+                let key: Vec<u32> = held[f0 * ndc..(f0 + 1) * ndc].iter().map(|&v| zigzag(v)).collect();
                 out.push(Job { gop: g, name: format!("g{g}.{nm}.key"), raw: RawStream { attr: *attr, kind: KIND_KEY, syms: key } });
                 if f1 > f0 {
                     let mut deltas = Vec::with_capacity((f1 - f0) * ndc);
                     for f in f0 + 1..=f1 {
                         let cur = &held[f * ndc..(f + 1) * ndc];
                         let prev = &held[(f - 1) * ndc..f * ndc];
-                        deltas.extend(cur.iter().zip(prev.iter()).map(|(&a, &b)| zigzag(a as i32 - b as i32)));
+                        deltas.extend(cur.iter().zip(prev.iter()).map(|(&a, &b)| zigzag(a - b)));
                     }
                     out.push(Job { gop: g, name: format!("g{g}.{nm}.delta"), raw: RawStream { attr: *attr, kind: KIND_DELTA, syms: deltas } });
                 }

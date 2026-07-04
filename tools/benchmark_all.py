@@ -59,7 +59,7 @@ def encode(seq_dir: Path, out: Path, extra: list[str]) -> dict:
     return json.loads(report.read_text())
 
 
-def bench_sequence(seq: str) -> dict:
+def bench_sequence(seq: str, cached: dict | None = None) -> dict:
     seq_dir = FRAMES / seq
     manifest = json.loads((seq_dir / "frames.json").read_text())
     files = [seq_dir / f["file"] for f in manifest["frames"]]
@@ -67,18 +67,26 @@ def bench_sequence(seq: str) -> dict:
     raw = sum(f.stat().st_size for f in files)
     print(f"[{seq}] {t} frames x {n} splats = {raw/1e6:.0f} MB raw")
 
-    t0 = time.time()
-    with ProcessPoolExecutor() as ex:
-        per_frame_gz = sum(ex.map(gzip_size, files))
-    print(f"[{seq}] per-frame gzip-9: {per_frame_gz/1e6:.1f} MB ({time.time()-t0:.0f}s)")
+    # generic baselines are deterministic — reuse them when re-benchmarking
+    # after an encoder-preset change (pass --fresh-baselines to recompute)
+    if cached and cached.get("raw_bytes") == raw:
+        per_frame_gz = cached["gzip_per_frame_bytes"]
+        concat_gz = cached["gzip_concat_bytes"]
+        zstd_long = cached["zstd19_long_bytes"]
+        print(f"[{seq}] baselines reused from docs/benchmarks.json")
+    else:
+        t0 = time.time()
+        with ProcessPoolExecutor() as ex:
+            per_frame_gz = sum(ex.map(gzip_size, files))
+        print(f"[{seq}] per-frame gzip-9: {per_frame_gz/1e6:.1f} MB ({time.time()-t0:.0f}s)")
 
-    t0 = time.time()
-    concat_gz = gzip_concat_size(files)
-    print(f"[{seq}] concat gzip-9: {concat_gz/1e6:.1f} MB ({time.time()-t0:.0f}s)")
+        t0 = time.time()
+        concat_gz = gzip_concat_size(files)
+        print(f"[{seq}] concat gzip-9: {concat_gz/1e6:.1f} MB ({time.time()-t0:.0f}s)")
 
-    t0 = time.time()
-    zstd_long = zstd_long_size(files)
-    print(f"[{seq}] concat zstd-19 --long: {zstd_long/1e6:.1f} MB ({time.time()-t0:.0f}s)")
+        t0 = time.time()
+        zstd_long = zstd_long_size(files)
+        print(f"[{seq}] concat zstd-19 --long: {zstd_long/1e6:.1f} MB ({time.time()-t0:.0f}s)")
 
     OUT.mkdir(parents=True, exist_ok=True)
     default = encode(seq_dir, OUT / f"{seq}_default.splat4d", [])
@@ -114,7 +122,9 @@ def bench_sequence(seq: str) -> dict:
 
 
 def main():
-    seqs = sys.argv[1:] or sorted(
+    fresh = "--fresh-baselines" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--fresh-baselines"]
+    seqs = args or sorted(
         d.name for d in FRAMES.iterdir() if (d / "frames.json").exists()
     )
     results = []
@@ -123,7 +133,7 @@ def main():
     if bench_path.exists():
         existing = {r["seq"]: r for r in json.loads(bench_path.read_text())["sequences"]}
     for seq in seqs:
-        results.append(bench_sequence(seq))
+        results.append(bench_sequence(seq, None if fresh else existing.get(seq)))
         existing[results[-1]["seq"]] = results[-1]
 
     all_results = sorted(existing.values(), key=lambda r: r["seq"])
@@ -131,7 +141,7 @@ def main():
     print(f"\nwrote {bench_path}")
 
     # markdown table
-    print("\n| sequence | frames×splats | raw | each frame gzip-9 | concat gzip-9 | concat zstd-19 --long | splat4d (±5mm/±4) | vs gzip | splat4d +denoise |")
+    print("\n| sequence | frames×splats | raw | each frame gzip-9 | concat gzip-9 | concat zstd-19 --long | splat4d (default: ±2mm/±4 color/rot exact/±2%) | vs gzip | splat4d +denoise |")
     print("|---|---|---:|---:|---:|---:|---:|---:|---:|")
     for r in all_results:
         d = r["splat4d_default"]["bytes"]

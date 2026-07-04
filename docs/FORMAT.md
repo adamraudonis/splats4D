@@ -17,11 +17,11 @@ reference value by at most the bound:
 
 | attribute | bound parameter | domain | default |
 |---|---|---|---|
-| position   | `eps_pos` meters (L∞ per axis) | f32 | 5 mm |
+| position   | `eps_pos` meters (L∞ per axis) | f32 | 2 mm |
 | scale      | `eps_scale` relative (per axis) | log domain: \|ln(ŝ/s)\| ≤ ln(1+r) | 2% |
 | color RGB  | `b_rgb` 8-bit levels (L∞ per channel) | u8 | ±4 |
 | opacity    | `b_alpha` 8-bit levels | u8 | ±4 |
-| rotation   | `b_rot` units of 1/128 per quat component, up to sign q≡−q | u8 grid | ±1 |
+| rotation   | `b_rot` units of 1/128 per quat component, up to sign q≡−q | u8 grid | 0 (exact) |
 
 The reference is the raw input bytes, except when the optional temporal color
 denoise prefilter is enabled (header flag bit 0), in which case color bounds

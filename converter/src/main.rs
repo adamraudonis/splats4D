@@ -34,13 +34,13 @@ enum Cmd {
         #[arg(short, long)]
         output: PathBuf,
         /// Max absolute position error, millimeters
-        #[arg(long, default_value_t = 5.0)]
+        #[arg(long, default_value_t = 2.0)]
         pos_mm: f64,
         /// Max absolute color/opacity error, 8-bit levels
         #[arg(long, default_value_t = 4)]
         color_levels: i32,
         /// Max absolute quaternion-component error, units of 1/128 (0 = lossless vs input grid)
-        #[arg(long, default_value_t = 1)]
+        #[arg(long, default_value_t = 0)]
         rot_steps: i32,
         /// Max relative scale error, percent
         #[arg(long, default_value_t = 2.0)]
@@ -49,7 +49,7 @@ enum Cmd {
         #[arg(long, default_value_t = 30)]
         gop: usize,
         /// zstd compression level (0 = auto: 19, with 13 for very large streams)
-        #[arg(long, default_value_t = 0)]
+        #[arg(long, default_value_t = 3)]
         zstd_level: i32,
         /// Temporal median-of-5 prefilter on colors (bounds then hold vs the smoothed signal)
         #[arg(long)]
@@ -331,7 +331,8 @@ mod tests {
                     .sum();
                 if dot < 0 {
                     for k in 0..4 {
-                        f.rot[(ti * n + i) * 4 + k] = -f.rot[(ti * n + i) * 4 + k];
+                        let v = f.rot[(ti * n + i) * 4 + k];
+                        f.rot[(ti * n + i) * 4 + k] = if v == -128 { 127 } else { -v };
                     }
                 }
             }

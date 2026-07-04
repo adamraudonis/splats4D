@@ -102,7 +102,10 @@ impl Frames {
                     let dot: i32 = (0..4).map(|k| q[k] as i32 * qp[k] as i32).sum();
                     if dot < 0 {
                         for v in q.iter_mut() {
-                            *v = -*v;
+                            // saturate: -(-128) = +128 is off the u8 grid; 127
+                            // is the nearest representable value of the same
+                            // rotation (q and -q are identified anyway)
+                            *v = if *v == -128 { 127 } else { -*v };
                         }
                     }
                 });

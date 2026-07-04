@@ -69,10 +69,10 @@ Takes a time series of antimatter15 <code>.splat</code> frames → one small, se
 not on average, not in PSNR: pointwise, deterministically, verified exhaustively by the encoder.</p>
 <div class="tablewrap"><table>
 <tr><th>attribute</th><th>bound</th><th>default</th></tr>
-<tr><td>position</td><td>± millimeters, L∞ per axis</td><td>±5 mm</td></tr>
+<tr><td>position</td><td>± millimeters, L∞ per axis</td><td>±2 mm</td></tr>
 <tr><td>color RGB</td><td>± 8-bit levels per channel</td><td>±4/255</td></tr>
 <tr><td>opacity</td><td>± 8-bit levels</td><td>±4/255</td></tr>
-<tr><td>rotation</td><td>± quaternion component (units of 1/128, up to sign)</td><td>±1/128</td></tr>
+<tr><td>rotation</td><td>± quaternion component (units of 1/128, up to sign)</td><td>exact (±0)</td></tr>
 <tr><td>scale</td><td>± relative %, per axis</td><td>±2%</td></tr>
 </table></div>
 <p class="dim">Mechanism: SZ/ZFP-style error-bounded quantization (step = 2×bound ⇒ error ≤ bound by construction).
@@ -135,19 +135,22 @@ juggle, boxes, softball, tennis), Neu3D cooking scenes via
 SpacetimeGaussians/<a href="https://github.com/antimatter15/splaTV">splaTV</a> (flame = backyard
 BBQ, sear = kitchen chef), and Technicolor (birthday party, 659k splats) — all converted to
 per-frame antimatter15 <code>.splat</code> files (32 B/splat), 20 fps. splat4d encodes use default
-bounds (±5 mm / ±4 color / ±1/128 rot / ±2% scale), bounds verified exhaustively on every run.
+bounds (±2 mm / ±4 color / exact rot / ±2% scale), bounds verified exhaustively on every run.
 gzip is <code>-9</code>. Encoded on a 10-core Apple-Silicon laptop.</p>
 <div class="tablewrap" id="bench-tables"><p class="dim">loading benchmarks.json…</p></div>
 
 <h3>Rate / bounds trade-off (juggle, full 7.5 s, 150×336,568 splats, 1,615 MB raw)</h3>
 <div class="tablewrap"><table>
 <tr><th>preset</th><th>bounds pos/color/rot/scale</th><th>size</th><th>ratio</th><th>encode</th></tr>
-<tr><td>fine</td><td>±2mm / ±2 / 0 / ±1%</td><td>86.2 MB</td><td>18.7×</td><td>10.8 s</td></tr>
-<tr><td><b>default</b></td><td>±5mm / ±4 / ±1 / ±2%</td><td><b>63.9 MB</b></td><td><b>25.3×</b></td><td>11.6 s</td></tr>
-<tr><td>default + denoise</td><td>same, vs median-5 colors</td><td>43.5 MB</td><td>37.1×</td><td>8.4 s</td></tr>
-<tr><td>coarse</td><td>±10mm / ±8 / ±2 / ±5%</td><td>50.5 MB</td><td>32.0×</td><td>10.1 s</td></tr>
-<tr><td><b>coarse + denoise</b></td><td>same, vs median-5 colors</td><td><b>33.4 MB</b></td><td><b>48.3×</b></td><td>7.9 s</td></tr>
+<tr><td>fine</td><td>±2mm / ±2 / exact / ±1%</td><td>93.9 MB</td><td>17.2×</td><td>2.2 s</td></tr>
+<tr><td><b>default</b></td><td>±2mm / ±4 / exact / ±2%</td><td><b>83.4 MB</b></td><td><b>19.4×</b></td><td><b>2.5 s</b></td></tr>
+<tr><td>default, max effort (--zstd-level 0)</td><td>same</td><td>75.1 MB</td><td>21.5×</td><td>9.8 s</td></tr>
+<tr><td>default + denoise</td><td>same, vs median-5 colors</td><td>63.2 MB</td><td>25.6×</td><td>1.5 s</td></tr>
+<tr><td>relaxed</td><td>±5mm / ±4 / ±1 / ±2%</td><td>72.0 MB</td><td>22.4×</td><td>1.0 s</td></tr>
+<tr><td>coarse</td><td>±10mm / ±8 / ±2 / ±5%</td><td>58.2 MB</td><td>27.8×</td><td>1.1 s</td></tr>
+<tr><td><b>coarse + denoise</b></td><td>same, vs median-5 colors</td><td><b>40.9 MB</b></td><td><b>39.5×</b></td><td>1.3 s</td></tr>
 </table></div>
+<p class="dim">All rows at the default effort (zstd 3) unless noted; measured on a 10-core Apple-Silicon laptop.</p>
 <p class="dim">Context: the best generic lossless baseline (zstd-19 --long over the concatenated series)
 reaches only 2.5×. Published 4D codecs reach 40–67× on this data class, but with no pointwise error
 guarantee, no byte-range seeking, and (usually) GPU optimization in the loop.</p>
@@ -161,8 +164,8 @@ guarantee, no byte-range seeking, and (usually) GPU optimization in the loop.</p
 </table></div>
 
 <h2>Using it</h2>
-<pre><code># Rust CLI (fastest)
-splat4d encode -i frames_dir -o out.splat4d --pos-mm 5 --color-levels 4
+<pre><code># Rust CLI (fastest) — defaults: --pos-mm 2 --color-levels 4 --rot-steps 0 --scale-pct 2
+splat4d encode -i frames_dir -o out.splat4d
 
 # Python (pip install splat4d)
 splat4d encode -i frames_dir -o out.splat4d

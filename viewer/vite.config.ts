@@ -101,9 +101,9 @@ function splat4dDevApi(): Plugin {
             return;
           }
           const p = {
-            pos_mm: num(url.searchParams.get('pos_mm'), 5, 0.1, 50),
+            pos_mm: num(url.searchParams.get('pos_mm'), 2, 0.1, 50),
             color_levels: Math.round(num(url.searchParams.get('color_levels'), 4, 0, 32)),
-            rot_steps: Math.round(num(url.searchParams.get('rot_steps'), 1, 0, 8)),
+            rot_steps: Math.round(num(url.searchParams.get('rot_steps'), 0, 0, 8)),
             scale_pct: num(url.searchParams.get('scale_pct'), 2, 0.1, 25),
             gop: Math.round(num(url.searchParams.get('gop'), 30, 5, 300)),
             denoise: url.searchParams.get('denoise') === '1',

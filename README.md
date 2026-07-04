@@ -15,10 +15,10 @@ frames and produces one small seekable file.
 
 | | |
 |---|---|
-| output size | **63.9 MB (25.3×)** default · **33.4 MB (48.3×)** coarse+denoise |
+| output size | **83.4 MB (19.4×)** default · **40.9 MB (39.5×)** coarse+denoise |
 | best generic lossless baseline (zstd-19 `--long`) | 642 MB (2.5×) |
-| encode time (10 cores) | 8–12 s (~130–150 MB/s input) |
-| bounds, verified on every splat of every frame | ±5 mm pos · ±4/255 color · ±1/128 rot · ±2 % scale |
+| encode time (10 cores) | 1–3 s at default effort (~640 MB/s input) |
+| bounds, verified on every splat of every frame | ±2 mm pos · ±4/255 color · **exact** rotation · ±2 % scale |
 | viewer: full scene first view | 141 ms local · **791 ms @ 50 Mbps** |
 | viewer: scrub into unbuffered region | **keyframe in 145 ms** |
 | playback | 60 fps @ 336k splats, WebGPU only (no WebGL fallback) |
@@ -62,9 +62,9 @@ EOF
 uv run --with numpy python tools/gen_splat_frames.py  # -> data/frames/juggle/*.splat
 
 # 2. encode (prints sizes, entropy floor, timings; verifies every bound)
+#    defaults: --pos-mm 2 --color-levels 4 --rot-steps 0 --scale-pct 2 --gop 30 --zstd-level 3
 cargo build --release --manifest-path converter/Cargo.toml
-./converter/target/release/splat4d encode -i data/frames/juggle -o data/out/juggle.splat4d \
-    --pos-mm 5 --color-levels 4 --rot-steps 1 --scale-pct 2
+./converter/target/release/splat4d encode -i data/frames/juggle -o data/out/juggle.splat4d
 
 # 3. view (WebGPU required: Chrome 113+, Safari 26+, Firefox 141+)
 cd viewer && npm install && npm run dev

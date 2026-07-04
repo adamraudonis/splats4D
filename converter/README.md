@@ -8,8 +8,8 @@ gaussian-splat frames into **one small, streamable `.splat4d` file** with
 ```bash
 pip install splat4d
 
-splat4d encode -i frames_dir -o scene.splat4d \
-    --pos-mm 5 --color-levels 4 --rot-steps 1 --scale-pct 2
+# defaults: --pos-mm 2 --color-levels 4 --rot-steps 0 (exact rotation) --scale-pct 2
+splat4d encode -i frames_dir -o scene.splat4d
 ```
 
 `frames_dir` contains `frame_0000.splat`, `frame_0001.splat`, … plus an

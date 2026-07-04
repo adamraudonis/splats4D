@@ -165,7 +165,10 @@ async function init() {
         $('m-total').textContent = (meta.fileSize / 1e6).toFixed(1);
         $('m-splats').textContent = meta.n.toLocaleString();
         $('m-dyn').textContent = `gop ${meta.gop}`;
-        $('m-bounds').textContent = `±${(meta.bounds.pos_m * 1000).toFixed(1)}mm pos · ±${meta.bounds.rgb} color · ±${meta.bounds.rot}/128 rot${meta.denoised ? ' · denoised' : ''}`;
+        $('m-bounds').textContent =
+          `±${(meta.bounds.pos_m * 1000).toFixed(1)}mm pos` +
+          ` · ${meta.bounds.rgb === 0 ? 'exact' : `±${meta.bounds.rgb}`} color` +
+          ` · ${meta.bounds.rot === 0 ? 'exact' : `±${meta.bounds.rot}/128`} rot${meta.denoised ? ' · denoised' : ''}`;
         $('m-ratio').textContent = `${(meta.fileSize / 1e6).toFixed(1)} MB ← ${((meta.n * meta.t * 32) / 1e6).toFixed(0)} MB raw (${((meta.n * meta.t * 32) / meta.fileSize).toFixed(1)}×)`;
         overlaySub.textContent = `${meta.n.toLocaleString()} splats · ${meta.t} frames @ ${meta.fps} fps`;
         if (origPermUrl) {
@@ -229,6 +232,8 @@ async function init() {
           origShownFrame = m.frame;
         }
         w.postMessage({ type: 'return', kind: 'origtex', buffer: m.texdata }, [m.texdata]);
+      } else if (m.type === 'dump') {
+        (window as unknown as Record<string, unknown>).__dumpResult = m.stats;
       } else if (m.type === 'error') {
         fail('Stream error', m.message);
       }
@@ -365,8 +370,8 @@ async function init() {
   };
   const showVals = () => {
     $('o-pos').textContent = `±${sliders.pos.value} mm`;
-    $('o-col').textContent = `±${sliders.col.value}/255`;
-    $('o-rot').textContent = `±${sliders.rot.value}/128`;
+    $('o-col').textContent = sliders.col.value === '0' ? 'exact' : `±${sliders.col.value}/255`;
+    $('o-rot').textContent = sliders.rot.value === '0' ? 'exact' : `±${sliders.rot.value}/128`;
     $('o-scl').textContent = `±${sliders.scl.value}%`;
     $('o-gop').textContent = `${sliders.gop.value} fr`;
   };
@@ -563,6 +568,7 @@ async function init() {
   let focalOverride: [number, number] | null = null;
   (window as unknown as Record<string, unknown>).__setfocal = (fx: number, fy: number) => (focalOverride = [fx, fy]);
   (window as unknown as Record<string, unknown>).__frameShown = () => lastShownFrame;
+  (window as unknown as Record<string, unknown>).__dump = () => worker?.postMessage({ type: 'dump' });
   (window as unknown as Record<string, unknown>).__seek = (f: number) => {
     if (!meta) return;
     setPlaying(false);
@@ -607,8 +613,8 @@ async function init() {
     if (meta && splats && sessionReady) {
       const dur = meta.t / meta.fps;
       if (playing && waitingGop < 0) {
-        timeSec += dt;
-        if (timeSec >= dur) timeSec -= dur;
+        // clamp: after a hidden-tab stall dt can be many seconds
+        timeSec = (timeSec + Math.min(dt, 0.1)) % dur;
       }
       const frame = Math.min(meta.t - 1, Math.floor(timeSec * meta.fps));
       if (frame !== lastShownFrame) requestFrame(frame);
