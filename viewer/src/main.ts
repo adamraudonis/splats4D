@@ -64,12 +64,18 @@ async function init() {
   let fov = 60;
   const bootParams = new URLSearchParams(location.search);
   const bare = bootParams.get('bare') === '1'; // harness mode: no UI, canvas sized like the port
+  const embed = bootParams.get('embed') === '1'; // hero-preview mode: transport only, autoplay
   const pixelRatio = bare ? devicePixelRatio : Math.min(devicePixelRatio, 2);
   if (bare) for (const id of ['hud', 'panel', 'bar']) $(id).style.display = 'none';
+  if (embed) {
+    for (const id of ['hud', 'panel']) $(id).style.display = 'none';
+    document.documentElement.classList.add('embed');
+  }
 
   const controls = new SplatControls(canvas, viewMatrixFromHint({ position: [0, -1.2, -2.9], target: [0, -0.9, 0.3] }));
 
   // ---- per-session state ----
+  let embedAutoplayed = false;
   let session = 0;
   let sessionReady = false;
   let worker: Worker | null = null;
@@ -201,6 +207,10 @@ async function init() {
         requestFrame(Math.min(meta.t - 1, Math.floor(timeSec * meta.fps)));
       } else if (m.type === 'frame') {
         if (!splats) return;
+        if (embed && !embedAutoplayed) {
+          embedAutoplayed = true;
+          setPlaying(true);
+        }
         lastShownFrame = m.frame;
         if (!m.approximate) waitingGop = -1;
         const band = new Uint32Array(m.band, 0, 2048 * m.rows * 4);
@@ -581,6 +591,13 @@ async function init() {
   if (fileOverride) {
     $('panel').style.display = 'none';
     compareBtn.style.display = 'none';
+    const camParam = bootParams.get('cam'); // px,py,pz,tx,ty,tz[,fov]
+    if (camParam) {
+      const v = camParam.split(',').map(Number);
+      if (v.length >= 6 && v.every(Number.isFinite)) {
+        pendingCamera = { position: v.slice(0, 3), target: v.slice(3, 6), fov: v[6] || 60 };
+      }
+    }
     loadFile(fileOverride);
   } else {
     await loadSequenceList();

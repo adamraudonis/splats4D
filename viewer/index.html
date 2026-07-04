@@ -50,6 +50,11 @@
         width: min(860px, calc(100% - 32px)); background: var(--panel);
         border: 1px solid #232a33; border-radius: 10px; padding: 10px 14px;
         display: flex; align-items: center; gap: 12px; backdrop-filter: blur(6px); }
+      /* embedded hero-preview mode: compact chrome */
+      html.embed #bar { bottom: 8px; padding: 6px 10px; gap: 8px; border-radius: 8px;
+        width: min(640px, calc(100% - 20px)); background: #12161bd9; }
+      html.embed #bar button { transform: scale(0.9); }
+      html.embed #compare-btn { display: none; }
       #play, #compare-btn { height: 34px; border-radius: 17px; border: 1px solid #2c3540;
         background: #161c23; color: var(--text); cursor: pointer; font-size: 13px;
         display: flex; align-items: center; justify-content: center; flex: none;
