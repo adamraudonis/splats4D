@@ -1,8 +1,12 @@
 # splats4D
 
 **`.splat4d`** — a streamable 4D gaussian splat format with **deterministic,
-tunable error bounds**, a fast Rust encoder, and a **three.js WebGPU**
+tunable error bounds**, a fast Rust encoder, and a **raw-WebGPU**
 streaming viewer with YouTube-style buffering and instant scrubbing.
+The renderer is a faithful WebGPU port of the
+[antimatter15/splat](https://github.com/antimatter15/splat) WebGL viewer,
+pixel-diff verified against it (zero pixels off by more than 16/255 at
+frozen test poses).
 
 Takes a time series of [antimatter15 `.splat`](https://github.com/antimatter15/splat)
 frames and produces one small seekable file.
@@ -41,7 +45,7 @@ frames and produces one small seekable file.
 
 ```
 converter/   Rust CLI: splat4d encode | verify | decode | info
-viewer/      Vite + three.js r185 WebGPURenderer viewer (worker decode + sort)
+viewer/      Vite + raw WebGPU viewer, ported from antimatter15/splat (worker decode + sort)
 tools/       Python prototypes/analysis, frame generator, throttled test server
 docs/        FORMAT.md (spec) · BENCHMARKS.md (numbers & methodology)
 ```

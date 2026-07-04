@@ -152,7 +152,7 @@ gzip is <code>-9</code>. Encoded on a 10-core Apple-Silicon laptop.</p>
 reaches only 2.5×. Published 4D codecs reach 40–67× on this data class, but with no pointwise error
 guarantee, no byte-range seeking, and (usually) GPU optimization in the loop.</p>
 
-<h3>Viewer (three.js WebGPURenderer — no WebGL fallback)</h3>
+<h3>Viewer (raw WebGPU, ported from the antimatter15/splat renderer and pixel-verified against it)</h3>
 <div class="tablewrap"><table>
 <tr><th>metric</th><th>local</th><th>throttled 50 Mbps</th></tr>
 <tr><td>full first view (header + static section)</td><td>141 ms</td><td>791 ms</td></tr>

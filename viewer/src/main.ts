@@ -1,13 +1,16 @@
-// splat4d viewer — three.js WebGPURenderer (hard requirement, no WebGL fallback).
-// Features: streaming playback with seek, live re-encode via the dev API
-// (sliders -> Rust encoder), and a split-screen comparison against the
-// original uncompressed .splat frames (same renderer, shared camera + sort).
+// splat4d viewer on the parity-proven WebGPU pipeline (the faithful port of
+// antimatter15/splat — see viewer/public/webgpu + compare.html harness).
+// Streaming playback with seek, live re-encode via the dev API, and a
+// split-screen compare against the original uncompressed .splat frames.
 
-import * as THREE from 'three/webgpu';
-import WebGPU from 'three/addons/capabilities/WebGPU.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createSplatMesh, type SplatMesh } from './splatmesh';
-import { OrigLoader, type OrigFrame } from './origloader';
+import { SplatRenderer, SplatSet } from './renderer';
+import {
+  getProjectionMatrix,
+  multiply4,
+  viewMatrixFromHint,
+  SplatControls,
+  type CamHint,
+} from './camera';
 
 interface Meta {
   n: number;
@@ -36,60 +39,86 @@ function fail(msg: string, sub = ''): never {
 }
 
 async function init() {
-  if (!WebGPU.isAvailable()) {
-    fail('WebGPU is required', 'This viewer intentionally has no WebGL fallback. Use Chrome 113+, Edge, Safari 26+, or Firefox 141+.');
+  if (!navigator.gpu) {
+    fail('WebGPU is required', 'This viewer has no WebGL fallback. Use Chrome 113+, Edge, Safari 26+, or Firefox 141+.');
   }
-  const renderer = new THREE.WebGPURenderer({ antialias: false });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.setClearColor(0x0b0d10);
-  // splat colors are sRGB and blended as-is (reference-viewer convention):
-  // disable tone mapping AND the output linear->sRGB transform, otherwise
-  // already-sRGB splat colors get encoded twice and wash toward white
-  renderer.toneMapping = THREE.NoToneMapping;
-  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-  await renderer.init();
-  const backend = (renderer as unknown as { backend: { isWebGPUBackend?: boolean } }).backend;
-  if (backend.isWebGPUBackend !== true) {
-    fail('WebGPU initialization fell back to WebGL', 'Refusing to run — this app is WebGPU-only.');
+  const canvas = document.createElement('canvas');
+  canvas.classList.add('webgpu');
+  $('canvas-wrap').appendChild(canvas);
+  let renderer: SplatRenderer;
+  try {
+    renderer = await SplatRenderer.create(canvas);
+  } catch (e) {
+    fail('WebGPU initialization failed', String(e));
   }
-  renderer.domElement.classList.add('webgpu');
-  $('canvas-wrap').appendChild(renderer.domElement);
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 200);
-  let controls: OrbitControls | null = null;
-
-  // ---- persistent state across re-encodes ----
+  // ---- persistent state ----
   const tPage = performance.now();
-  let splats: SplatMesh | null = null;
-  let origMesh: SplatMesh | null = null;
-  const origLoader = new OrigLoader('/frames', 0); // n patched on first meta
   let meta: Meta | null = null;
+  let splats: SplatSet | null = null; // compressed set
+  let origSet: SplatSet | null = null; // compare set
   let playing = false;
   let timeSec = 0;
   let compareOn = false;
   let dividerFrac = 0.5;
+  let fov = 60;
+  const bootParams = new URLSearchParams(location.search);
+  const bare = bootParams.get('bare') === '1'; // harness mode: no UI, canvas sized like the port
+  const pixelRatio = bare ? devicePixelRatio : Math.min(devicePixelRatio, 2);
+  if (bare) for (const id of ['hud', 'panel', 'bar']) $(id).style.display = 'none';
 
-  // ---- per-session (per loaded file) state ----
+  const controls = new SplatControls(canvas, viewMatrixFromHint({ position: [0, -1.2, -2.9], target: [0, -0.9, 0.3] }));
+
+  // ---- per-session state ----
   let session = 0;
-  let sessionReady = false; // static state received; safe to request frames/sorts
+  let sessionReady = false;
   let worker: Worker | null = null;
   let buffered: boolean[] = [];
   let lastShownFrame = -1;
   let frameInFlight = false;
   let waitingGop = -1;
-  let sortInFlight = false;
-  let needSort = true;
-  const lastSortRow = new Float32Array(3);
-  const viewProj = new THREE.Matrix4();
+  let latestIndices: Uint32Array | null = null;
   let fpsCount = 0;
   let fpsTime = performance.now();
 
   const timeline = $('timeline') as HTMLCanvasElement;
   const tctx = timeline.getContext('2d')!;
 
-  // ================= playback plumbing =================
+  // ---- original-frame cache for compare (raw bytes, pre-permutation) ----
+  let currentSeq = 'juggle_2s';
+  const origCache = new Map<number, ArrayBuffer>();
+  let origLru: number[] = [];
+  let origPermLoaded = false;
+  let origShownFrame = -1;
+
+  async function fetchOrigFrame(frame: number): Promise<ArrayBuffer | null> {
+    const hit = origCache.get(frame);
+    if (hit) return hit;
+    try {
+      const r = await fetch(`/frames/${currentSeq}/frame_${String(frame).padStart(4, '0')}.splat`);
+      if (!r.ok) return null;
+      const buf = await r.arrayBuffer();
+      origCache.set(frame, buf);
+      origLru.push(frame);
+      while (origLru.length > 6) origCache.delete(origLru.shift()!);
+      return buf;
+    } catch {
+      return null;
+    }
+  }
+
+  function refreshOrig(frame: number) {
+    if (!compareOn || !worker || !origPermLoaded) return;
+    void fetchOrigFrame(frame).then((buf) => {
+      if (buf && compareOn && frame === lastShownFrame && worker) {
+        // copy: the worker call is repeatable from cache
+        const copy = buf.slice(0);
+        worker.postMessage({ type: 'origframe', frame, buffer: copy }, [copy]);
+      }
+    });
+  }
+
+  // ---- playback plumbing ----
   function requestFrame(frame: number) {
     if (!meta || !worker || !sessionReady || frameInFlight) return;
     if (frame === lastShownFrame && waitingGop < 0) return;
@@ -97,132 +126,20 @@ async function init() {
     worker.postMessage({ type: 'frame', frame });
   }
 
-  function maybeSort(force = false) {
-    if (!splats || sortInFlight || !meta || !worker || !sessionReady) return;
-    viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const e = viewProj.elements;
-    if (!force) {
-      const dot = lastSortRow[0] * e[2] + lastSortRow[1] * e[6] + lastSortRow[2] * e[10];
-      const a2 = e[2] ** 2 + e[6] ** 2 + e[10] ** 2;
-      const b2 = lastSortRow[0] ** 2 + lastSortRow[1] ** 2 + lastSortRow[2] ** 2;
-      if (b2 > 0 && Math.abs(dot / Math.sqrt(a2 * b2) - 1) < 0.01) return;
-    }
-    sortInFlight = true;
-    lastSortRow[0] = e[2];
-    lastSortRow[1] = e[6];
-    lastSortRow[2] = e[10];
-    worker.postMessage({ type: 'sort', viewProj: new Float32Array(e) });
-  }
-
-  function uploadOrig(f: OrigFrame) {
-    if (!origMesh) return;
-    origMesh.posArr.set(f.pos);
-    origMesh.scaleArr.set(f.scale);
-    origMesh.quatArr.set(f.quat);
-    origMesh.rgbaArr.set(f.rgba);
-    origMesh.markPos();
-    origMesh.markScale();
-    origMesh.markQuat();
-    origMesh.markRgba();
-  }
-
-  /** (re)create meshes when the splat count changes (sequence switch) */
-  function ensureMeshes(n: number) {
-    if (splats && splats.posArr.length === n * 4) return;
-    splats?.dispose(scene);
-    origMesh?.dispose(scene);
-    origMesh = null;
-    splats = createSplatMesh(n);
-    scene.add(splats.mesh);
-    origLoader.n = n;
-    if (compareOn) {
-      origMesh = createSplatMesh(n, { sharedSort: { sortArr: splats.sortArr, sortNode: splats.sortNode } });
-      scene.add(origMesh.mesh);
-    }
-    onResize();
+  function ensureSets(n: number) {
+    if (splats && splats.count >= 0 && splatsN === n) return;
+    splats?.dispose();
+    origSet?.dispose();
+    origSet = null;
+    splats = renderer.createSet();
+    splatsN = n;
+    if (compareOn) makeOrigSet();
     applyClips();
   }
+  let splatsN = -1;
 
-  function refreshOrig(frame: number) {
-    if (!compareOn) return;
-    void origLoader.load(frame).then((f) => {
-      if (f && compareOn && frame === lastShownFrame) uploadOrig(f);
-    });
-  }
-
-  let cameraReady = false;
-  function firstStaticSetup(m: Meta) {
-    ensureMeshes(m.n);
-    if (cameraReady) return;
-    cameraReady = true;
-
-    const [ax, , az, bx, , bz] = m.aabb;
-    const originInside = ax < 0 && bx > 0 && az < 0 && bz > 0;
-    const tx = originInside ? 0 : (ax + bx) / 2;
-    const ty = originInside ? -0.9 : (m.aabb[1] + m.aabb[4]) / 2;
-    const tz = originInside ? 0.3 : (az + bz) / 2;
-    camera.up.set(0, -1, 0);
-    camera.position.set(tx, ty - 0.3, tz - 2.9);
-    controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(tx, ty, tz);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.12;
-    controls.update();
-
-    (window as unknown as Record<string, unknown>).__cam = (
-      px: number, py: number, pz: number, qx: number, qy: number, qz: number
-    ) => {
-      camera.position.set(px, py, pz);
-      controls!.target.set(qx, qy, qz);
-      controls!.update();
-    };
-    (window as unknown as Record<string, unknown>).__play = (p: boolean) => setPlaying(p);
-    (window as unknown as Record<string, unknown>).__compare = (on: boolean) => setCompare(on);
-    (window as unknown as Record<string, unknown>).__sortCheck = () => {
-      const vp = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
-      const s = splats!;
-      const d = (i: number) =>
-        vp[2] * s.posArr[i * 4] + vp[6] * s.posArr[i * 4 + 1] + vp[10] * s.posArr[i * 4 + 2];
-      const n = s.sortArr.length;
-      let inversions = 0;
-      let maxInv = 0;
-      let bigInv = 0; // inversions larger than ~10 buckets
-      let prev = d(s.sortArr[0]);
-      let mn = Infinity;
-      let mx = -Infinity;
-      for (let k = 0; k < n; k++) {
-        const cur = d(s.sortArr[k]);
-        if (cur < mn) mn = cur;
-        if (cur > mx) mx = cur;
-        if (k > 0) {
-          const inv = cur - prev;
-          if (inv > 0) {
-            inversions++;
-            if (inv > maxInv) maxInv = inv;
-            if (inv > ((mx - mn) / 65536) * 10) bigInv++;
-          }
-        }
-        prev = cur;
-      }
-      const bucket = (mx - mn) / 65536;
-      return { n, inversions, maxInv, bigInv, bucket, range: mx - mn };
-    };
-    (window as unknown as Record<string, unknown>).__proj = () => ({
-      proj: Array.from(camera.projectionMatrix.elements),
-      near: camera.near,
-      far: camera.far,
-      reversed: (renderer as unknown as { coordinateSystem?: number }).coordinateSystem,
-    });
-    (window as unknown as Record<string, unknown>).__dbg = (k: number) => ({
-      pos: Array.from(splats!.posArr.slice(k * 4, k * 4 + 4)),
-      scale: Array.from(splats!.scaleArr.slice(k * 4, k * 4 + 4)),
-      quat: splats!.quatArr[k].toString(16),
-      rgba: splats!.rgbaArr[k].toString(16),
-    });
-
-    onResize();
-    overlay.classList.add('hidden');
-    $('m-ttfv').textContent = `${(performance.now() - tPage).toFixed(0)} ms`;
+  function makeOrigSet() {
+    if (!origSet) origSet = renderer.createSet();
   }
 
   function loadFile(url: string) {
@@ -234,13 +151,13 @@ async function init() {
     lastShownFrame = -1;
     frameInFlight = false;
     waitingGop = -1;
-    sortInFlight = false;
-    needSort = true;
+    latestIndices = null;
+    origShownFrame = -1;
 
     const w = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     worker = w;
     w.onmessage = (ev: MessageEvent) => {
-      if (mySession !== session) return; // stale worker
+      if (mySession !== session) return;
       const m = ev.data;
       if (m.type === 'meta') {
         meta = m as Meta;
@@ -251,44 +168,45 @@ async function init() {
         $('m-bounds').textContent = `±${(meta.bounds.pos_m * 1000).toFixed(1)}mm pos · ±${meta.bounds.rgb} color · ±${meta.bounds.rot}/128 rot${meta.denoised ? ' · denoised' : ''}`;
         $('m-ratio').textContent = `${(meta.fileSize / 1e6).toFixed(1)} MB ← ${((meta.n * meta.t * 32) / 1e6).toFixed(0)} MB raw (${((meta.n * meta.t * 32) / meta.fileSize).toFixed(1)}×)`;
         overlaySub.textContent = `${meta.n.toLocaleString()} splats · ${meta.t} frames @ ${meta.fps} fps`;
+        if (origPermUrl) {
+          void fetch(origPermUrl)
+            .then((r) => r.arrayBuffer())
+            .then((p) => {
+              if (mySession !== session || !worker) return;
+              worker.postMessage({ type: 'perm', perm: p }, [p]);
+              origPermLoaded = true;
+            })
+            .catch(() => (origPermLoaded = false));
+        }
       } else if (m.type === 'static') {
         if (!meta) return;
         $('m-static').textContent = `${m.staticMs.toFixed(0)} ms`;
-        firstStaticSetup(meta);
-        splats!.posArr.set(new Float32Array(m.pos));
-        splats!.scaleArr.set(new Float32Array(m.scale));
-        splats!.quatArr.set(new Uint32Array(m.quat));
-        splats!.rgbaArr.set(new Uint32Array(m.rgba));
-        splats!.markPos();
-        splats!.markScale();
-        splats!.markQuat();
-        splats!.markRgba();
+        ensureSets(meta.n);
+        splats!.uploadTexture(m.texdata, m.texwidth, m.texheight);
         sessionReady = true;
         if (pendingCamera) {
           applyCameraHint(pendingCamera);
           pendingCamera = null;
+          wantDefaultCam = false;
+        } else if (wantDefaultCam) {
+          applyCameraHint(defaultHintFromMeta(meta));
+          wantDefaultCam = false;
         }
-        maybeSort(true);
+        overlay.classList.add('hidden');
+        if ($('m-ttfv').textContent === '…') $('m-ttfv').textContent = `${(performance.now() - tPage).toFixed(0)} ms`;
         lastShownFrame = -1;
         requestFrame(Math.min(meta.t - 1, Math.floor(timeSec * meta.fps)));
       } else if (m.type === 'frame') {
         if (!splats) return;
         lastShownFrame = m.frame;
         if (!m.approximate) waitingGop = -1;
-        splats.posArr.set(new Float32Array(m.pos));
-        splats.quatArr.set(new Uint32Array(m.quat));
-        splats.rgbaArr.set(new Uint32Array(m.rgba));
-        splats.markPos();
-        splats.markQuat();
-        splats.markRgba();
-        w.postMessage({ type: 'return', kind: 'pos', buffer: m.pos }, [m.pos]);
-        w.postMessage({ type: 'return', kind: 'quat', buffer: m.quat }, [m.quat]);
-        w.postMessage({ type: 'return', kind: 'rgba', buffer: m.rgba }, [m.rgba]);
+        const band = new Uint32Array(m.band, 0, 2048 * m.rows * 4);
+        splats.uploadTexRows(band, m.rowStart, m.rows);
+        w.postMessage({ type: 'return', kind: 'band', buffer: m.band }, [m.band]);
         frameInFlight = false;
         $('m-frame').textContent = String(m.frame);
         $('m-decode').textContent = m.decodeMs.toFixed(1);
-        needSort = true;
-        refreshOrig(m.frame);
+        if (compareOn && origShownFrame !== m.frame) refreshOrig(m.frame);
       } else if (m.type === 'miss') {
         frameInFlight = false;
         waitingGop = m.gop;
@@ -297,64 +215,86 @@ async function init() {
         $('m-loaded').textContent = (m.bytesLoaded / 1e6).toFixed(1);
       } else if (m.type === 'sorted') {
         if (!splats) return;
-        splats.sortArr.set(new Uint32Array(m.indices));
-        splats.markSort();
+        const idx = new Uint32Array(m.indices, 0, m.count);
+        splats.setIndices(idx, m.count);
+        latestIndices = idx.slice(0);
+        if (origSet && compareOn) origSet.setIndices(latestIndices, m.count);
         w.postMessage({ type: 'return', kind: 'sort', buffer: m.indices }, [m.indices]);
-        sortInFlight = false;
         $('m-sort').textContent = m.sortMs.toFixed(1);
-      } else if (m.type === 'sorted-skip') {
-        sortInFlight = false;
-        needSort = true;
+      } else if (m.type === 'origtex') {
+        if (origSet && compareOn) {
+          const otex = new Uint32Array(m.texdata, 0, m.texwidth * m.texheight * 4);
+          origSet.uploadTexture(otex, m.texwidth, m.texheight);
+          if (latestIndices) origSet.setIndices(latestIndices, latestIndices.length);
+          origShownFrame = m.frame;
+        }
+        w.postMessage({ type: 'return', kind: 'origtex', buffer: m.texdata }, [m.texdata]);
       } else if (m.type === 'error') {
         fail('Stream error', m.message);
       }
     };
-    // resolve relative paths against the page, not the worker script location
     w.postMessage({ type: 'load', url: new URL(url, location.href).href });
   }
 
-  // ================= compare mode =================
+  // ---- camera ----
+  let pendingCamera: CamHint | null = null;
+  let wantDefaultCam = true; // reset camera to a scene-default pose when a sequence has no hint
+  const seqCameras = new Map<string, CamHint | null>();
+  let origPermUrl: string | null = null;
+
+  function applyCameraHint(hint: CamHint | null) {
+    if (!hint) return;
+    controls.viewMatrix = viewMatrixFromHint(hint);
+    fov = hint.fov ?? 60;
+  }
+
+  function defaultHintFromMeta(m: Meta): CamHint {
+    const [ax, , az, bx, , bz] = m.aabb;
+    const originInside = ax < 0 && bx > 0 && az < 0 && bz > 0;
+    const tx = originInside ? 0 : (ax + bx) / 2;
+    const ty = originInside ? -0.9 : (m.aabb[1] + m.aabb[4]) / 2;
+    const tz = originInside ? 0.3 : (az + bz) / 2;
+    return { position: [tx, ty - 0.3, tz - 2.9], target: [tx, ty, tz], fov: 60 };
+  }
+
+  // ---- compare mode ----
   const divider = $('divider');
   const compareBtn = $('compare-btn') as HTMLButtonElement;
 
   function applyClips() {
     const ndc = dividerFrac * 2 - 1;
-    if (compareOn && splats && origMesh) {
-      origMesh.setClip(ndc, -1);
+    if (compareOn && splats && origSet) {
+      origSet.setClip(ndc, -1);
       splats.setClip(ndc, 1);
       divider.style.display = 'block';
       divider.style.left = `${dividerFrac * 100}%`;
     } else {
       splats?.setClip(0, 0);
-      origMesh?.setClip(0, 0);
+      origSet?.setClip(0, 0);
       divider.style.display = 'none';
     }
   }
 
   function setCompare(on: boolean) {
     if (!splats || !meta) return;
-    if (on && !origLoader.hasPerm()) {
+    if (on && !origPermLoaded) {
       $('enc-status').textContent = 'compare needs the dev API';
       return;
     }
     compareOn = on;
     compareBtn.classList.toggle('on', on);
     if (on) {
-      if (!origMesh) {
-        origMesh = createSplatMesh(meta.n, { sharedSort: { sortArr: splats.sortArr, sortNode: splats.sortNode } });
-        scene.add(origMesh.mesh);
-        onResize();
-      }
-      origMesh.mesh.visible = true;
+      makeOrigSet();
+      origSet!.visible = true;
+      origShownFrame = -1;
       refreshOrig(Math.max(0, lastShownFrame));
-    } else if (origMesh) {
-      origMesh.mesh.visible = false;
+    } else if (origSet) {
+      origSet.visible = false;
     }
     applyClips();
   }
   compareBtn.onclick = () => setCompare(!compareOn);
 
-  // divider drag
   {
     const grip = divider.querySelector('.grip') as HTMLElement;
     let dragging = false;
@@ -372,28 +312,8 @@ async function init() {
     addEventListener('pointerup', () => (dragging = false));
   }
 
-  // ================= encode panel =================
+  // ---- sequences + encode panel ----
   const seqSelect = $('s-seq') as HTMLSelectElement;
-  let currentSeq = 'juggle_2s';
-  interface CamHint {
-    position: number[];
-    target: number[];
-    up?: number[];
-    fov?: number; // vertical degrees — forward-facing captures want a narrow one
-  }
-  const seqCameras = new Map<string, CamHint | null>();
-  let pendingCamera: CamHint | null = null;
-
-  function applyCameraHint(hint: CamHint | null) {
-    if (!hint || !controls) return;
-    camera.up.set(hint.up?.[0] ?? 0, hint.up?.[1] ?? -1, hint.up?.[2] ?? 0);
-    camera.position.set(hint.position[0], hint.position[1], hint.position[2]);
-    controls.target.set(hint.target[0], hint.target[1], hint.target[2]);
-    camera.fov = hint.fov ?? 60;
-    camera.updateProjectionMatrix();
-    controls.update();
-    onResize(); // focal uniforms depend on fov
-  }
 
   async function loadSequenceList() {
     try {
@@ -412,7 +332,7 @@ async function init() {
         seqSelect.appendChild(opt);
         seqCameras.set(s.id, s.camera);
       }
-      const preferred = sequences.find((s) => s.id === 'juggle_2s') ?? sequences[0];
+      const preferred = sequences.find((s) => s.id === 'flame_2s') ?? sequences[0];
       currentSeq = preferred.id;
       seqSelect.value = currentSeq;
       pendingCamera = seqCameras.get(currentSeq) ?? null;
@@ -423,11 +343,14 @@ async function init() {
 
   seqSelect.onchange = () => {
     currentSeq = seqSelect.value;
-    origLoader.reset(`/frames/${currentSeq}`);
+    origCache.clear();
+    origLru = [];
+    origPermLoaded = false;
     timeSec = 0;
     playing = false;
     playBtn.textContent = '▶';
     pendingCamera = seqCameras.get(currentSeq) ?? null;
+    wantDefaultCam = true;
     void runEncode();
   };
 
@@ -494,7 +417,6 @@ async function init() {
       (rep.denoise ? `<div class="s">denoise dev: mean ${rep.denoise.mean_dev.toFixed(1)}, p99 ${rep.denoise.p99_dev.toFixed(0)}</div>` : '');
   }
 
-  // copy current settings as ready-to-use CLI flags
   const copyBtn = $('copy-btn') as HTMLButtonElement;
   copyBtn.onclick = () => {
     const flags =
@@ -524,7 +446,6 @@ async function init() {
         }, 2000);
       })
       .catch(() => {
-        // clipboard blocked (permissions/automation) — show selectable text instead
         $('enc-status').textContent = 'select & copy below';
         showFlags();
       });
@@ -540,7 +461,8 @@ async function init() {
       const data = (await r.json()) as EncodeResponse;
       if ((data as unknown as { error?: string }).error) throw new Error((data as unknown as { error: string }).error);
       showEncodeStats(data);
-      await origLoader.setPermUrl(data.perm);
+      origPermUrl = data.perm;
+      origPermLoaded = false;
       loadFile(data.url);
       $('enc-status').textContent = `${(data.wallMs / 1000).toFixed(1)} s`;
       return true;
@@ -554,7 +476,7 @@ async function init() {
   }
   encodeBtn.onclick = () => void runEncode();
 
-  // ================= timeline / transport =================
+  // ---- timeline / transport ----
   function drawTimeline() {
     if (!meta) return;
     const w = timeline.width;
@@ -624,32 +546,40 @@ async function init() {
   });
 
   function onResize() {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    const pr = Math.min(devicePixelRatio, 2);
-    const w = innerWidth * pr;
-    const h = innerHeight * pr;
-    const fy = camera.projectionMatrix.elements[5] * (h / 2);
-    const fx = camera.projectionMatrix.elements[0] * (w / 2);
-    splats?.setViewport(w, h, fx, fy);
-    origMesh?.setViewport(w, h, fx, fy);
+    canvas.width = Math.round(innerWidth * pixelRatio);
+    canvas.height = Math.round(innerHeight * pixelRatio);
   }
   addEventListener('resize', onResize);
+  onResize();
 
-  // ================= boot =================
-  const fileOverride = new URLSearchParams(location.search).get('file');
+  // ---- debug hooks ----
+  (window as unknown as Record<string, unknown>).__cam = (
+    px: number, py: number, pz: number, qx: number, qy: number, qz: number
+  ) => applyCameraHint({ position: [px, py, pz], target: [qx, qy, qz], fov });
+  (window as unknown as Record<string, unknown>).__play = (p: boolean) => setPlaying(p);
+  (window as unknown as Record<string, unknown>).__compare = (on: boolean) => setCompare(on);
+  (window as unknown as Record<string, unknown>).__vm = () => controls.viewMatrix.slice(0);
+  (window as unknown as Record<string, unknown>).__setvm = (m: number[]) => (controls.viewMatrix = m);
+  let focalOverride: [number, number] | null = null;
+  (window as unknown as Record<string, unknown>).__setfocal = (fx: number, fy: number) => (focalOverride = [fx, fy]);
+  (window as unknown as Record<string, unknown>).__frameShown = () => lastShownFrame;
+  (window as unknown as Record<string, unknown>).__seek = (f: number) => {
+    if (!meta) return;
+    setPlaying(false);
+    timeSec = (f + 0.5) / meta.fps;
+    requestFrame(f);
+  };
+
+  // ---- boot ----
+  const fileOverride = bootParams.get('file');
   if (fileOverride) {
     $('panel').style.display = 'none';
     compareBtn.style.display = 'none';
     loadFile(fileOverride);
   } else {
     await loadSequenceList();
-    origLoader.reset(`/frames/${currentSeq}`);
-    const ok = await runEncode(); // default params; cached after first run
+    const ok = await runEncode();
     if (!ok) {
-      // no dev API (static hosting) — fall back to a pre-encoded file,
-      // optionally described by a demo.json ({file, camera}) next to the page
       $('panel').style.display = 'none';
       compareBtn.style.display = 'none';
       let demoFile = 'juggle.splat4d';
@@ -660,23 +590,21 @@ async function init() {
           demoFile = j.file ?? demoFile;
           pendingCamera = j.camera ?? null;
         }
-      } catch {
-        /* keep defaults */
-      }
+      } catch { /* keep defaults */ }
       loadFile(demoFile);
     }
   }
 
-  // ================= main loop =================
+  // ---- main loop ----
   let lastT = performance.now();
   function loop() {
     requestAnimationFrame(loop);
     const now = performance.now();
     const dt = (now - lastT) / 1000;
     lastT = now;
-    controls?.update();
+    controls.update();
 
-    if (meta && splats) {
+    if (meta && splats && sessionReady) {
       const dur = meta.t / meta.fps;
       if (playing && waitingGop < 0) {
         timeSec += dt;
@@ -684,17 +612,22 @@ async function init() {
       }
       const frame = Math.min(meta.t - 1, Math.floor(timeSec * meta.fps));
       if (frame !== lastShownFrame) requestFrame(frame);
-      if (needSort) {
-        maybeSort(true);
-        needSort = false;
-      } else {
-        maybeSort(false);
-      }
+
+      const fy = focalOverride ? focalOverride[1] : (0.5 * innerHeight) / Math.tan((fov * Math.PI) / 360);
+      const fx = focalOverride ? focalOverride[0] : fy;
+      const proj = getProjectionMatrix(fx, fy, innerWidth, innerHeight);
+      const viewProj = multiply4(proj, controls.viewMatrix);
+      worker?.postMessage({ type: 'view', viewProj: new Float32Array(viewProj) });
+
+      splats.setCamera(proj, controls.viewMatrix, fx, fy, innerWidth, innerHeight);
+      if (origSet && compareOn) origSet.setCamera(proj, controls.viewMatrix, fx, fy, innerWidth, innerHeight);
+
       $('clock').textContent = `${timeSec.toFixed(2)} / ${dur.toFixed(2)}`;
       drawTimeline();
+      renderer.render(compareOn && origSet ? [origSet, splats] : [splats]);
+    } else {
+      renderer.render([]);
     }
-
-    renderer.render(scene, camera);
     fpsCount++;
     if (now - fpsTime > 1000) {
       $('m-fps').textContent = String(fpsCount);

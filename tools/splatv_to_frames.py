@@ -87,7 +87,11 @@ def main(src: str, out_dir: str, t_frames: int = 40) -> None:
         q = quat + omega * dt[:, None]
         q /= np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-12)
         topacity = np.exp(-((dt / trbf_s) ** 2))
-        alpha = np.clip(np.round(base_alpha * topacity), 0, 255).astype(np.uint8)
+        # the reference splaTV shader HARD-discards splats below 0.02 temporal
+        # opacity; without this, splats extrapolated far along their motion
+        # polynomials linger as faint giant streaks
+        vis = topacity >= 0.02
+        alpha = np.where(vis, np.clip(np.round(base_alpha * topacity), 0, 255), 0).astype(np.uint8)
 
         rec[:, 0:12] = pos.astype(np.float32).view(np.uint8).reshape(n, 12)
         rec[:, 27] = alpha

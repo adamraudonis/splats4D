@@ -1,19 +1,28 @@
-// Data worker: streams the .splat4d file, decodes GOPs, maintains the current
-// frame state (integer bins -> dequantized GPU-ready arrays), and depth-sorts.
+// Data worker: streams the .splat4d file, decodes GOPs, and maintains the
+// splat data in the EXACT texture layout of the reference renderer
+// (antimatter15/splat): per splat, two rgba32uint texels —
+//   texel A: x, y, z as f32 bits + (unused)
+//   texel B: 3x packHalf2x16(4*sigma pairs) + rgba bytes
+// Sigma is recomputed on the CPU for splats whose rotation/scale change,
+// exactly like the reference worker's generateTexture(). Sorting is the
+// reference's 16-bit counting sort (ascending depth = front-to-back).
 //
 // Protocol (main -> worker):
 //   {type:'load', url}
-//   {type:'frame', frame}                   request a specific frame's state
-//   {type:'sort', viewProj: Float32Array}   request a depth sort of current positions
-//   {type:'return', kind, buffer}           return a pooled buffer
+//   {type:'frame', frame}
+//   {type:'view', viewProj: Float32Array}        every frame (worker dedups)
+//   {type:'perm', perm: ArrayBuffer}             encoder permutation (compare)
+//   {type:'origframe', frame, buffer}            raw .splat frame (compare)
+//   {type:'return', kind, buffer}                pooled buffer return
 //
 // (worker -> main):
-//   {type:'meta', ...header summary}
-//   {type:'static', pos, scale, quat, rgba, stats}      full initial arrays (transfer)
-//   {type:'frame', frame, pos, quat, rgba, decodeMs}    updated full arrays (transfer)
-//   {type:'buffered', gop, bytesLoaded}                 a GOP became available
-//   {type:'miss', frame, gop}                           seek target not buffered yet
-//   {type:'sorted', indices, sortMs}
+//   {type:'meta', ...}
+//   {type:'static', texdata, texwidth, texheight, staticMs}
+//   {type:'frame', frame, band, rowStart, rows, approximate, decodeMs}
+//   {type:'buffered', gop, bytesLoaded}
+//   {type:'miss', frame, gop}
+//   {type:'sorted', indices, count, sortMs}
+//   {type:'origtex', frame, texdata, texwidth, texheight}
 //   {type:'error', message}
 
 import {
@@ -33,6 +42,8 @@ import {
   ATTR_SCALE,
 } from './format';
 
+export const TEXWIDTH = 2048;
+
 let header: Header | null = null;
 let stat: StaticState | null = null;
 let url = '';
@@ -40,32 +51,117 @@ let fileSize = 0;
 let rangeMode = false;
 let bytesLoaded = 0;
 
-// full file buffer (sequential mode) or sparse chunks (range mode)
 let fileBuf: Uint8Array | null = null;
 const gopReady: boolean[] = [];
 const gopCache = new Map<number, GopData>();
-const gopKeys = new Map<number, GopData>(); // keys-only (seek fast path)
+const gopKeys = new Map<number, GopData>();
 const gopFetching = new Set<number>();
 
-// dynamic-attr index lists and current integer state
 const CH = [3, 4, 3, 1, 3];
 let dynIdx: Uint32Array[] = [];
-let cur: Int32Array[] = []; // current bins per attr
+let cur: Int32Array[] = [];
 let curFrame = -1;
 
-// persistent dequantized full arrays
-let posF: Float32Array; // n*4
-let quatU: Uint32Array; // n   packed (w,x,y,z) u8
-let rgbaU: Uint32Array; // n   packed (r,g,b,a) u8
-let scaleF: Float32Array; // n*4 (static in v1 files; rebuilt per frame if dynamic)
+// current state per splat (file order)
+let posF: Float32Array; // n*3
+let scaleF: Float32Array; // n*3 linear
+let quatB: Uint8Array; // n*4 raw u8 (w,x,y,z), .splat convention
+let rgbaB: Uint8Array; // n*4
+
+// the texture (reference layout)
+let texdata: Uint32Array;
+let texF: Float32Array;
+let texC: Uint8Array;
+let texHeight = 0;
+let dirtyRowStart = 0; // dynamic band start row (constant per file)
+let sigmaIdx: Uint32Array; // splats needing sigma recompute per frame
+let permArr: Uint32Array | null = null;
 
 let pendingFrame = -1;
 
-// simple buffer pools keyed by kind
-const pools: Record<string, ArrayBuffer[]> = { pos: [], quat: [], rgba: [], sort: [] };
+const pools: Record<string, ArrayBuffer[]> = { band: [], sort: [], origtex: [] };
 
 function post(msg: unknown, transfer?: Transferable[]) {
   (self as unknown as Worker).postMessage(msg, transfer ?? []);
+}
+
+// ---- half float packing (reference implementation, verbatim) --------------
+const _floatView = new Float32Array(1);
+const _int32View = new Int32Array(_floatView.buffer);
+
+function floatToHalf(float: number): number {
+  _floatView[0] = float;
+  const f = _int32View[0];
+  const sign = (f >> 31) & 0x0001;
+  const exp = (f >> 23) & 0x00ff;
+  let frac = f & 0x007fffff;
+  let newExp;
+  if (exp === 0) {
+    newExp = 0;
+  } else if (exp < 113) {
+    newExp = 0;
+    frac |= 0x00800000;
+    frac = frac >> (113 - exp);
+    if (frac & 0x01000000) {
+      newExp = 1;
+      frac = 0;
+    }
+  } else if (exp < 142) {
+    newExp = exp - 112;
+  } else {
+    newExp = 31;
+    frac = 0;
+  }
+  return (sign << 15) | (newExp << 10) | (frac >> 13);
+}
+
+function packHalf2x16(x: number, y: number): number {
+  return (floatToHalf(x) | (floatToHalf(y) << 16)) >>> 0;
+}
+
+/** sigma words for splat i from quatB/scaleF (reference generateTexture math) */
+function writeSigma(i: number) {
+  const sx = scaleF[i * 3];
+  const sy = scaleF[i * 3 + 1];
+  const sz = scaleF[i * 3 + 2];
+  const r0 = (quatB[i * 4] - 128) / 128;
+  const r1 = (quatB[i * 4 + 1] - 128) / 128;
+  const r2 = (quatB[i * 4 + 2] - 128) / 128;
+  const r3 = (quatB[i * 4 + 3] - 128) / 128;
+
+  const m0 = (1 - 2 * (r2 * r2 + r3 * r3)) * sx;
+  const m1 = 2 * (r1 * r2 + r0 * r3) * sx;
+  const m2 = 2 * (r1 * r3 - r0 * r2) * sx;
+  const m3 = 2 * (r1 * r2 - r0 * r3) * sy;
+  const m4 = (1 - 2 * (r1 * r1 + r3 * r3)) * sy;
+  const m5 = 2 * (r2 * r3 + r0 * r1) * sy;
+  const m6 = 2 * (r1 * r3 + r0 * r2) * sz;
+  const m7 = 2 * (r2 * r3 - r0 * r1) * sz;
+  const m8 = (1 - 2 * (r1 * r1 + r2 * r2)) * sz;
+
+  const s0 = m0 * m0 + m3 * m3 + m6 * m6;
+  const s1 = m0 * m1 + m3 * m4 + m6 * m7;
+  const s2 = m0 * m2 + m3 * m5 + m6 * m8;
+  const s3 = m1 * m1 + m4 * m4 + m7 * m7;
+  const s4 = m1 * m2 + m4 * m5 + m7 * m8;
+  const s5 = m2 * m2 + m5 * m5 + m8 * m8;
+
+  texdata[8 * i + 4] = packHalf2x16(4 * s0, 4 * s1);
+  texdata[8 * i + 5] = packHalf2x16(4 * s2, 4 * s3);
+  texdata[8 * i + 6] = packHalf2x16(4 * s4, 4 * s5);
+}
+
+function writePos(i: number) {
+  texF[8 * i] = posF[i * 3];
+  texF[8 * i + 1] = posF[i * 3 + 1];
+  texF[8 * i + 2] = posF[i * 3 + 2];
+}
+
+function writeColor(i: number) {
+  texC[4 * (8 * i + 7)] = rgbaB[i * 4];
+  texC[4 * (8 * i + 7) + 1] = rgbaB[i * 4 + 1];
+  texC[4 * (8 * i + 7) + 2] = rgbaB[i * 4 + 2];
+  texC[4 * (8 * i + 7) + 3] = rgbaB[i * 4 + 3];
 }
 
 self.onmessage = (e: MessageEvent) => {
@@ -76,8 +172,12 @@ self.onmessage = (e: MessageEvent) => {
       void load();
     } else if (m.type === 'frame') {
       requestFrame(m.frame);
-    } else if (m.type === 'sort') {
-      sort(m.viewProj);
+    } else if (m.type === 'view') {
+      runSort(m.viewProj);
+    } else if (m.type === 'perm') {
+      permArr = new Uint32Array(m.perm);
+    } else if (m.type === 'origframe') {
+      buildOrigTex(m.frame, m.buffer);
     } else if (m.type === 'return') {
       const pool = pools[m.kind];
       if (pool && pool.length < 4) pool.push(m.buffer);
@@ -89,7 +189,6 @@ self.onmessage = (e: MessageEvent) => {
 
 async function load() {
   const t0 = performance.now();
-  // probe: range request for the first 256 KB
   const probe = await fetch(url, { headers: { Range: 'bytes=0-262143' } });
   rangeMode = probe.status === 206;
   const contentRange = probe.headers.get('Content-Range');
@@ -99,7 +198,6 @@ async function load() {
   if (rangeMode) {
     head = new Uint8Array(await probe.arrayBuffer());
   } else {
-    // server ignored Range: stream the whole body progressively
     fileSize = parseInt(probe.headers.get('Content-Length') ?? '0', 10);
     void streamBody(probe);
     head = await waitBytes(262144);
@@ -120,10 +218,8 @@ async function load() {
     denoised: h.denoised,
     headerMs: performance.now() - t0,
   });
-  // bytes may have fully streamed before the header existed — re-check now
   if (!rangeMode) checkSequentialGops();
 
-  // static section
   const so = h.static_section.offset;
   const sl = h.static_section.len;
   let sbuf: Uint8Array;
@@ -133,25 +229,23 @@ async function load() {
     sbuf = (await waitBytes(so + sl)).subarray(so, so + sl);
   }
   stat = parseStatic(sbuf, h);
-  buildInitialArrays();
+  buildInitialState();
+  const texCopy = texdata.slice(0);
   post(
     {
       type: 'static',
-      pos: posF.buffer,
-      scale: scaleF.buffer,
-      quat: quatU.buffer,
-      rgba: rgbaU.buffer,
+      texdata: texCopy,
+      texwidth: TEXWIDTH,
+      texheight: texHeight,
       staticMs: performance.now() - t0,
     },
-    // NOTE: keep worker-side copies — clone before transfer
+    [texCopy.buffer]
   );
 
-  // background: fetch GOPs sequentially (range mode); sequential stream handles it otherwise
   if (rangeMode) void prefetchLoop();
-  else void watchSequential();
 }
 
-// ---- transport ----------------------------------------------------------
+// ---- transport (unchanged) -----------------------------------------------
 let streamResolvers: { bytes: number; resolve: (b: Uint8Array) => void }[] = [];
 
 async function streamBody(resp: Response) {
@@ -161,7 +255,7 @@ async function streamBody(resp: Response) {
   for (;;) {
     const { done, value } = await reader.read();
     if (done) {
-      checkSequentialGops(); // final sweep in case the header arrived late
+      checkSequentialGops();
       break;
     }
     if (bytesLoaded + value.length > fb.length) {
@@ -200,8 +294,7 @@ function checkSequentialGops() {
   for (let g = 0; g < header.gops.length; g++) {
     const span = header.gops[g];
     if (!gopReady[g] && bytesLoaded >= span.offset + span.len) {
-      const data = parseGop(fileBuf!.subarray(span.offset, span.offset + span.len));
-      gopCache.set(g, data);
+      gopCache.set(g, parseGop(fileBuf!.subarray(span.offset, span.offset + span.len)));
       gopReady[g] = true;
       post({ type: 'buffered', gop: g, bytesLoaded });
       servePending();
@@ -209,14 +302,9 @@ function checkSequentialGops() {
   }
 }
 
-async function watchSequential() {
-  // gop availability is driven by streamBody -> checkSequentialGops
-}
-
 async function prefetchLoop() {
   if (!header) return;
   for (;;) {
-    // priority: pending seek target's GOP, then nearest un-fetched after playhead
     let target = -1;
     if (pendingFrame >= 0) {
       const g = Math.floor(pendingFrame / header.gop);
@@ -232,12 +320,11 @@ async function prefetchLoop() {
         }
       }
     }
-    if (target < 0) return; // everything fetched
+    if (target < 0) return;
     gopFetching.add(target);
     const span = header.gops[target];
     const buf = await fetchRange(span.offset, span.offset + span.len - 1);
-    const data = parseGop(buf);
-    gopCache.set(target, data);
+    gopCache.set(target, parseGop(buf));
     gopReady[target] = true;
     gopFetching.delete(target);
     post({ type: 'buffered', gop: target, bytesLoaded });
@@ -245,32 +332,38 @@ async function prefetchLoop() {
   }
 }
 
-// ---- state --------------------------------------------------------------
-function buildInitialArrays() {
+// ---- state ----------------------------------------------------------------
+function clamp8(v: number) {
+  return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+function buildInitialState() {
   const h = header!;
   const s = stat!;
   const n = h.n;
   const st = h.steps;
-  posF = new Float32Array(n * 4);
-  scaleF = new Float32Array(n * 4);
-  quatU = new Uint32Array(n);
-  rgbaU = new Uint32Array(n);
+
+  posF = new Float32Array(n * 3);
+  scaleF = new Float32Array(n * 3);
+  quatB = new Uint8Array(n * 4);
+  rgbaB = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) {
-    posF[i * 4] = s.basePos[i * 3] * st.base_pos;
-    posF[i * 4 + 1] = s.basePos[i * 3 + 1] * st.base_pos;
-    posF[i * 4 + 2] = s.basePos[i * 3 + 2] * st.base_pos;
-    scaleF[i * 4] = Math.exp(s.baseLs[i * 3] * st.base_scale_log);
-    scaleF[i * 4 + 1] = Math.exp(s.baseLs[i * 3 + 1] * st.base_scale_log);
-    scaleF[i * 4 + 2] = Math.exp(s.baseLs[i * 3 + 2] * st.base_scale_log);
-    const w = clamp8(s.baseRot[i * 4] + 128);
-    const x = clamp8(s.baseRot[i * 4 + 1] + 128);
-    const y = clamp8(s.baseRot[i * 4 + 2] + 128);
-    const z = clamp8(s.baseRot[i * 4 + 3] + 128);
-    quatU[i] = (w | (x << 8) | (y << 16) | (z << 24)) >>> 0;
-    rgbaU[i] =
-      (s.baseRgb[i * 3] | (s.baseRgb[i * 3 + 1] << 8) | (s.baseRgb[i * 3 + 2] << 16) | (s.baseAlpha[i] << 24)) >>> 0;
+    posF[i * 3] = s.basePos[i * 3] * st.base_pos;
+    posF[i * 3 + 1] = s.basePos[i * 3 + 1] * st.base_pos;
+    posF[i * 3 + 2] = s.basePos[i * 3 + 2] * st.base_pos;
+    scaleF[i * 3] = Math.exp(s.baseLs[i * 3] * st.base_scale_log);
+    scaleF[i * 3 + 1] = Math.exp(s.baseLs[i * 3 + 1] * st.base_scale_log);
+    scaleF[i * 3 + 2] = Math.exp(s.baseLs[i * 3 + 2] * st.base_scale_log);
+    quatB[i * 4] = clamp8(s.baseRot[i * 4] + 128);
+    quatB[i * 4 + 1] = clamp8(s.baseRot[i * 4 + 1] + 128);
+    quatB[i * 4 + 2] = clamp8(s.baseRot[i * 4 + 2] + 128);
+    quatB[i * 4 + 3] = clamp8(s.baseRot[i * 4 + 3] + 128);
+    rgbaB[i * 4] = s.baseRgb[i * 3];
+    rgbaB[i * 4 + 1] = s.baseRgb[i * 3 + 1];
+    rgbaB[i * 4 + 2] = s.baseRgb[i * 3 + 2];
+    rgbaB[i * 4 + 3] = s.baseAlpha[i];
   }
-  // dynamic index lists
+
   dynIdx = [];
   cur = [];
   for (let a = 0; a < 5; a++) {
@@ -283,13 +376,27 @@ function buildInitialArrays() {
     dynIdx.push(idx);
     cur.push(new Int32Array(count * CH[a]));
   }
-  // static arrays show frame 0 (bases hold frame-0 values for dynamic attrs),
-  // but track bins are unseeded until GOP 0's keys are applied
-  curFrame = -1;
-}
+  // splats whose sigma changes over time = rot- or scale-dynamic
+  const sig = new Set<number>();
+  for (const i of dynIdx[ATTR_ROT]) sig.add(i);
+  for (const i of dynIdx[ATTR_SCALE]) sig.add(i);
+  sigmaIdx = Uint32Array.from([...sig].sort((a, b) => a - b));
 
-function clamp8(v: number) {
-  return v < 0 ? 0 : v > 255 ? 255 : v;
+  // dirty band: rows covering every dynamic splat (contiguous tail by design)
+  let firstDyn = n;
+  for (let a = 0; a < 5; a++) if (dynIdx[a].length) firstDyn = Math.min(firstDyn, dynIdx[a][0]);
+  dirtyRowStart = firstDyn >= n ? 0 : (2 * firstDyn) >> 11; // texel col pair -> row = (2i)/2048
+
+  texHeight = Math.ceil((2 * n) / TEXWIDTH);
+  texdata = new Uint32Array(TEXWIDTH * texHeight * 4);
+  texF = new Float32Array(texdata.buffer);
+  texC = new Uint8Array(texdata.buffer);
+  for (let i = 0; i < n; i++) {
+    writePos(i);
+    writeSigma(i);
+    writeColor(i);
+  }
+  curFrame = -1;
 }
 
 function applyKey(a: number, keys: GopData['keys']) {
@@ -313,7 +420,6 @@ function rollTo(frame: number): boolean {
   if (!gopReady[g]) return false;
   const gopData = gopCache.get(g)!;
   const f0 = h.gops[g].f0;
-  // roll forward from current state when it lies in [f0, frame]; otherwise reseed from the keyframe
   let from: number;
   if (curFrame >= f0 && curFrame <= frame) {
     from = curFrame;
@@ -328,64 +434,75 @@ function rollTo(frame: number): boolean {
   return true;
 }
 
-function updateArrays() {
+/** dequantize current bins into state arrays + texture texels */
+function updateState() {
   const st = header!.steps;
-  // positions
   {
     const idx = dynIdx[ATTR_POS];
     const c = cur[ATTR_POS];
     for (let j = 0; j < idx.length; j++) {
       const i = idx[j];
-      posF[i * 4] = c[j * 3] * st.pos;
-      posF[i * 4 + 1] = c[j * 3 + 1] * st.pos;
-      posF[i * 4 + 2] = c[j * 3 + 2] * st.pos;
+      posF[i * 3] = c[j * 3] * st.pos;
+      posF[i * 3 + 1] = c[j * 3 + 1] * st.pos;
+      posF[i * 3 + 2] = c[j * 3 + 2] * st.pos;
+      writePos(i);
     }
   }
-  // rotations
   {
     const idx = dynIdx[ATTR_ROT];
     const c = cur[ATTR_ROT];
     for (let j = 0; j < idx.length; j++) {
       const i = idx[j];
-      const w = clamp8(c[j * 4] * st.rot + 128);
-      const x = clamp8(c[j * 4 + 1] * st.rot + 128);
-      const y = clamp8(c[j * 4 + 2] * st.rot + 128);
-      const z = clamp8(c[j * 4 + 3] * st.rot + 128);
-      quatU[i] = (w | (x << 8) | (y << 16) | (z << 24)) >>> 0;
+      quatB[i * 4] = clamp8(c[j * 4] * st.rot + 128);
+      quatB[i * 4 + 1] = clamp8(c[j * 4 + 1] * st.rot + 128);
+      quatB[i * 4 + 2] = clamp8(c[j * 4 + 2] * st.rot + 128);
+      quatB[i * 4 + 3] = clamp8(c[j * 4 + 3] * st.rot + 128);
     }
   }
-  // colors (keep static alpha byte)
-  {
-    const idx = dynIdx[ATTR_RGB];
-    const c = cur[ATTR_RGB];
-    for (let j = 0; j < idx.length; j++) {
-      const i = idx[j];
-      const r = clamp8(c[j * 3] * st.rgb);
-      const g = clamp8(c[j * 3 + 1] * st.rgb);
-      const b = clamp8(c[j * 3 + 2] * st.rgb);
-      rgbaU[i] = ((rgbaU[i] & 0xff000000) | (r | (g << 8) | (b << 16))) >>> 0;
-    }
-  }
-  // dynamic alpha
-  {
-    const idx = dynIdx[ATTR_ALPHA];
-    const c = cur[ATTR_ALPHA];
-    for (let j = 0; j < idx.length; j++) {
-      const i = idx[j];
-      rgbaU[i] = ((rgbaU[i] & 0x00ffffff) | (clamp8(c[j] * st.alpha) << 24)) >>> 0;
-    }
-  }
-  // dynamic scale
   {
     const idx = dynIdx[ATTR_SCALE];
     const c = cur[ATTR_SCALE];
     for (let j = 0; j < idx.length; j++) {
       const i = idx[j];
-      scaleF[i * 4] = Math.exp(c[j * 3] * st.scale_log);
-      scaleF[i * 4 + 1] = Math.exp(c[j * 3 + 1] * st.scale_log);
-      scaleF[i * 4 + 2] = Math.exp(c[j * 3 + 2] * st.scale_log);
+      scaleF[i * 3] = Math.exp(c[j * 3] * st.scale_log);
+      scaleF[i * 3 + 1] = Math.exp(c[j * 3 + 1] * st.scale_log);
+      scaleF[i * 3 + 2] = Math.exp(c[j * 3 + 2] * st.scale_log);
     }
   }
+  for (let k = 0; k < sigmaIdx.length; k++) writeSigma(sigmaIdx[k]);
+  {
+    const idx = dynIdx[ATTR_RGB];
+    const c = cur[ATTR_RGB];
+    for (let j = 0; j < idx.length; j++) {
+      const i = idx[j];
+      rgbaB[i * 4] = clamp8(c[j * 3] * st.rgb);
+      rgbaB[i * 4 + 1] = clamp8(c[j * 3 + 1] * st.rgb);
+      rgbaB[i * 4 + 2] = clamp8(c[j * 3 + 2] * st.rgb);
+      writeColor(i);
+    }
+  }
+  {
+    const idx = dynIdx[ATTR_ALPHA];
+    const c = cur[ATTR_ALPHA];
+    for (let j = 0; j < idx.length; j++) {
+      const i = idx[j];
+      rgbaB[i * 4 + 3] = clamp8(c[j] * st.alpha);
+      writeColor(i);
+    }
+  }
+}
+
+function emitFrame(frame: number, t0: number, approximate: boolean) {
+  updateState();
+  const rows = texHeight - dirtyRowStart;
+  const bandLen = TEXWIDTH * rows * 4; // u32s
+  const bb = pools.band.pop() ?? new ArrayBuffer(bandLen * 4);
+  const band = new Uint32Array(bb, 0, bandLen);
+  band.set(texdata.subarray(dirtyRowStart * TEXWIDTH * 4, (dirtyRowStart + rows) * TEXWIDTH * 4));
+  post(
+    { type: 'frame', frame, band: bb, rowStart: dirtyRowStart, rows, approximate, decodeMs: performance.now() - t0 },
+    [bb]
+  );
 }
 
 function requestFrame(frame: number) {
@@ -396,12 +513,11 @@ function requestFrame(frame: number) {
     const g = Math.floor(frame / header.gop);
     post({ type: 'miss', frame, gop: g });
     if (rangeMode) void priorityFetch(g);
-    // fast path: if this GOP's keys are already here, show its keyframe now
     const keysOnly = gopKeys.get(g);
     if (keysOnly && curFrame !== header.gops[g].f0) {
       for (let a = 0; a < 5; a++) applyKey(a, keysOnly.keys);
       curFrame = header.gops[g].f0;
-      emitFrame(curFrame, t0, /*approximate*/ true);
+      emitFrame(curFrame, t0, true);
     }
     return;
   }
@@ -409,23 +525,6 @@ function requestFrame(frame: number) {
   emitFrame(frame, t0, false);
 }
 
-function emitFrame(frame: number, t0: number, approximate: boolean) {
-  updateArrays();
-  // copy into pooled transfer buffers
-  const pb = pools.pos.pop() ?? new ArrayBuffer(posF.byteLength);
-  const qb = pools.quat.pop() ?? new ArrayBuffer(quatU.byteLength);
-  const cb = pools.rgba.pop() ?? new ArrayBuffer(rgbaU.byteLength);
-  new Float32Array(pb).set(posF);
-  new Uint32Array(qb).set(quatU);
-  new Uint32Array(cb).set(rgbaU);
-  post(
-    { type: 'frame', frame, approximate, pos: pb, quat: qb, rgba: cb, decodeMs: performance.now() - t0 },
-    [pb, qb, cb]
-  );
-}
-
-/** Two-phase priority fetch for a seek target: TOC+keys prefix first (show the
- *  keyframe immediately), then the delta payloads (roll to the exact frame). */
 async function priorityFetch(g: number) {
   if (!header || gopReady[g] || gopFetching.has(g)) return;
   gopFetching.add(g);
@@ -442,7 +541,6 @@ async function priorityFetch(g: number) {
     }
     if (!gopReady[g]) {
       gopKeys.set(g, parseGopKeys(prefix));
-      // show the keyframe for a still-pending seek right away
       if (pendingFrame >= 0 && Math.floor(pendingFrame / header.gop) === g) {
         const keysOnly = gopKeys.get(g)!;
         for (let a = 0; a < 5; a++) applyKey(a, keysOnly.keys);
@@ -450,7 +548,6 @@ async function priorityFetch(g: number) {
         emitFrame(curFrame, performance.now(), true);
       }
     }
-    // phase 2: rest of the chunk
     if (!gopReady[g]) {
       const rest = await fetchRange(span.offset + prefix.length, span.offset + span.len - 1);
       const full = new Uint8Array(span.len);
@@ -470,58 +567,98 @@ function servePending() {
   if (pendingFrame >= 0) requestFrame(pendingFrame);
 }
 
-// ---- depth sort (16-bit counting sort, antimatter15 style) ---------------
-let counts = new Uint32Array(65536);
+// ---- depth sort (reference 16-bit counting sort, ascending = front-to-back)
+let lastProj: Float32Array | null = null;
+let lastSortedFrame = -2;
 
-function sort(viewProj: Float32Array) {
-  if (!header || !posF) {
-    // static state not built yet — tell main so it can retry (avoids a stuck sortInFlight)
-    post({ type: 'sorted-skip' });
-    return;
+function runSort(viewProj: Float32Array) {
+  if (!header || !posF) return;
+  // reference redundancy check: skip if view direction barely changed AND the
+  // frame (splat positions) didn't change since the last sort
+  if (lastProj && lastSortedFrame === curFrame) {
+    const dot = lastProj[2] * viewProj[2] + lastProj[6] * viewProj[6] + lastProj[10] * viewProj[10];
+    if (Math.abs(dot - 1) < 0.01) return;
   }
   const t0 = performance.now();
-  const n = header.n;
-  const vz0 = viewProj[2],
-    vz1 = viewProj[6],
-    vz2 = viewProj[10];
-  const depths = new Int32Array(n);
-  // depth range from VISIBLE splats only: invisible ones (alpha 0) can sit at
-  // wildly extrapolated positions and would collapse the bucket resolution of
-  // the real scene, mis-sorting transparency into streak artifacts
-  let mn = Infinity,
-    mx = -Infinity;
-  for (let i = 0; i < n; i++) {
-    const d = ((vz0 * posF[i * 4] + vz1 * posF[i * 4 + 1] + vz2 * posF[i * 4 + 2]) * 4096) | 0;
-    depths[i] = d;
-    if (rgbaU[i] >>> 24 !== 0) {
-      if (d < mn) mn = d;
-      if (d > mx) mx = d;
+  const vertexCount = header.n;
+  let maxDepth = -Infinity;
+  let minDepth = Infinity;
+  const sizeList = new Int32Array(vertexCount);
+  for (let i = 0; i < vertexCount; i++) {
+    const depth = ((viewProj[2] * posF[i * 3] + viewProj[6] * posF[i * 3 + 1] + viewProj[10] * posF[i * 3 + 2]) * 4096) | 0;
+    sizeList[i] = depth;
+    // range from visible splats only: alpha-0 ghosts can sit at extrapolated
+    // positions and would collapse the bucket resolution of the real scene
+    if (rgbaB[i * 4 + 3] !== 0) {
+      if (depth > maxDepth) maxDepth = depth;
+      if (depth < minDepth) minDepth = depth;
     }
   }
-  if (mn > mx) {
-    mn = 0;
-    mx = 1;
+  if (minDepth > maxDepth) {
+    minDepth = 0;
+    maxDepth = 1;
   }
-  const range = mx - mn || 1;
-  const scale = 65535 / range;
-  counts.fill(0);
-  const buckets = new Uint16Array(n);
-  for (let i = 0; i < n; i++) {
-    let b = ((depths[i] - mn) * scale) | 0;
+  const depthInv = (256 * 256 - 1) / (maxDepth - minDepth || 1);
+  const counts0 = new Uint32Array(256 * 256);
+  for (let i = 0; i < vertexCount; i++) {
+    let b = ((sizeList[i] - minDepth) * depthInv) | 0;
     if (b < 0) b = 0;
     else if (b > 65535) b = 65535;
-    buckets[i] = b;
-    counts[b]++;
+    sizeList[i] = b;
+    counts0[b]++;
   }
-  // back-to-front for over-blending: larger clip-z = farther, drawn first
-  let acc = 0;
-  for (let b = 65535; b >= 0; b--) {
-    const c = counts[b];
-    counts[b] = acc;
-    acc += c;
+  const starts0 = new Uint32Array(256 * 256);
+  for (let i = 1; i < 256 * 256; i++) starts0[i] = starts0[i - 1] + counts0[i - 1];
+  const ib = pools.sort.pop() ?? new ArrayBuffer(vertexCount * 4);
+  const depthIndex = new Uint32Array(ib, 0, vertexCount);
+  for (let i = 0; i < vertexCount; i++) depthIndex[starts0[sizeList[i]]++] = i;
+
+  lastProj = viewProj.slice(0);
+  lastSortedFrame = curFrame;
+  post({ type: 'sorted', indices: ib, count: vertexCount, sortMs: performance.now() - t0 }, [ib]);
+}
+
+// ---- compare: original .splat frame -> full texture -----------------------
+function buildOrigTex(frame: number, buffer: ArrayBuffer) {
+  if (!header || !permArr) return;
+  const n = header.n;
+  const raw = new Uint8Array(buffer);
+  if (raw.length !== n * 32) return;
+  const f32 = new Float32Array(buffer);
+  const rows = texHeight;
+  const ob = pools.origtex.pop() ?? new ArrayBuffer(TEXWIDTH * rows * 16);
+  const otex = new Uint32Array(ob, 0, TEXWIDTH * rows * 4);
+  const oF = new Float32Array(ob);
+  const oC = new Uint8Array(ob);
+  for (let i = 0; i < n; i++) {
+    const src = permArr[i]; // file order i <- original index perm[i]
+    const s8 = src * 32;
+    oF[8 * i] = f32[src * 8];
+    oF[8 * i + 1] = f32[src * 8 + 1];
+    oF[8 * i + 2] = f32[src * 8 + 2];
+    const sx = f32[src * 8 + 3];
+    const sy = f32[src * 8 + 4];
+    const sz = f32[src * 8 + 5];
+    const r0 = (raw[s8 + 28] - 128) / 128;
+    const r1 = (raw[s8 + 29] - 128) / 128;
+    const r2 = (raw[s8 + 30] - 128) / 128;
+    const r3 = (raw[s8 + 31] - 128) / 128;
+    const m0 = (1 - 2 * (r2 * r2 + r3 * r3)) * sx;
+    const m1 = 2 * (r1 * r2 + r0 * r3) * sx;
+    const m2 = 2 * (r1 * r3 - r0 * r2) * sx;
+    const m3 = 2 * (r1 * r2 - r0 * r3) * sy;
+    const m4 = (1 - 2 * (r1 * r1 + r3 * r3)) * sy;
+    const m5 = 2 * (r2 * r3 + r0 * r1) * sy;
+    const m6 = 2 * (r1 * r3 + r0 * r2) * sz;
+    const m7 = 2 * (r2 * r3 - r0 * r1) * sz;
+    const m8 = (1 - 2 * (r1 * r1 + r2 * r2)) * sz;
+    otex[8 * i + 4] = packHalf2x16(4 * (m0 * m0 + m3 * m3 + m6 * m6), 4 * (m0 * m1 + m3 * m4 + m6 * m7));
+    otex[8 * i + 5] = packHalf2x16(4 * (m0 * m2 + m3 * m5 + m6 * m8), 4 * (m1 * m1 + m4 * m4 + m7 * m7));
+    otex[8 * i + 6] = packHalf2x16(4 * (m1 * m2 + m4 * m5 + m7 * m8), 4 * (m2 * m2 + m5 * m5 + m8 * m8));
+    oC[4 * (8 * i + 7)] = raw[s8 + 24];
+    oC[4 * (8 * i + 7) + 1] = raw[s8 + 25];
+    oC[4 * (8 * i + 7) + 2] = raw[s8 + 26];
+    oC[4 * (8 * i + 7) + 3] = raw[s8 + 27];
   }
-  const ib = pools.sort.pop() ?? new ArrayBuffer(n * 4);
-  const indices = new Uint32Array(ib);
-  for (let i = 0; i < n; i++) indices[counts[buckets[i]]++] = i;
-  post({ type: 'sorted', indices: ib, sortMs: performance.now() - t0 }, [ib]);
+  post({ type: 'origtex', frame, texdata: ob, texwidth: TEXWIDTH, texheight: rows }, [ob]);
 }

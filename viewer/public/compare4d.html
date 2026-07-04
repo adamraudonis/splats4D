@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>splat4d viewer vs ported reference — parity harness</title>
+<style>
+  body { margin: 0; background: #000; color: #ddd; font: 12px ui-monospace, monospace; }
+  #bar { padding: 8px 12px; display: flex; gap: 14px; align-items: center; background: #111; flex-wrap: wrap; }
+  #bar b { color: #4da3ff; }
+  .row { display: flex; }
+  .cell { flex: 1; position: relative; border-right: 1px solid #222; }
+  .cell h3 { position: absolute; top: 4px; left: 8px; z-index: 2; margin: 0; font-size: 11px;
+             background: #000a; padding: 2px 8px; border-radius: 4px; }
+  iframe { width: 100%; height: 46vh; border: 0; display: block; background: #000; }
+  canvas#diff { width: 100%; height: 38vh; object-fit: contain; background: #000; display: block; }
+  button { background: #4da3ff; border: 0; border-radius: 4px; padding: 4px 12px; font: inherit;
+           font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="run">▶ run all poses</button>
+  <span id="stats">–</span>
+</div>
+<div class="row">
+  <div class="cell"><h3>ported reference (decoded frame 0)</h3><iframe id="a"></iframe></div>
+  <div class="cell"><h3>splat4d viewer (streaming, frame 0)</h3><iframe id="b"></iframe></div>
+</div>
+<canvas id="diff"></canvas>
+<script>
+const KEY = new URLSearchParams(location.search).get('key') ?? 'flame_2s_p5_c4_r1_s2_g30_d0_z3';
+const FRAME0 = `${location.origin}/api/file/flame4d_f0.splat`;
+const FX = 1159.5880733038064, FY = 1164.6601287484507;
+
+// same lookAt as viewer/src/camera.ts viewMatrixFromHint (y-down world)
+function vmFromHint(e, t) {
+  const sub = (a, b) => a.map((v, i) => v - b[i]);
+  const norm = (a) => { const l = Math.hypot(...a); return a.map((v) => v / l); };
+  const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+  const dp = (a, b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const Z = norm(sub(t, e));
+  const X = norm(cross([0, 1, 0], Z));
+  const Y = cross(Z, X);
+  return [X[0],Y[0],Z[0],0, X[1],Y[1],Z[1],0, X[2],Y[2],Z[2],0, -dp(e,X),-dp(e,Y),-dp(e,Z),1];
+}
+
+const POSES = [
+  { name: 'wide',   vm: vmFromHint([0, -0.5, -1.2],   [-0.3, 0.3, 2.2]) },
+  { name: 'person', vm: vmFromHint([-0.55, -0.05, 0.6], [-0.62, 0.35, 2.55]) },
+  { name: 'flame',  vm: vmFromHint([-0.4, 0.1, 1.2],  [-0.7, 0.4, 2.6]) },
+];
+
+const a = document.getElementById('a');
+const b = document.getElementById('b');
+a.src = `/webgpu/index.html?url=${encodeURIComponent(FRAME0)}#${encodeURIComponent(JSON.stringify(POSES[0].vm))}`;
+b.src = `/?file=${encodeURIComponent(`/api/file/${KEY}.splat4d`)}&bare=1`;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function waitReady() {
+  for (let i = 0; i < 300; i++) {
+    const aw = a.contentWindow, bw = b.contentWindow;
+    const aReady = aw && aw.document.getElementById('spinner')?.style.display === 'none';
+    const bReady = bw && typeof bw.__frameShown === 'function' && bw.__frameShown() === 0;
+    if (aReady && bReady) return;
+    await sleep(100);
+  }
+  throw new Error('viewers not ready');
+}
+
+let poseSeq = 0;
+function setPose(vm) {
+  // port applies poses via its hashchange listener (also kills its carousel
+  // animation); pad with whitespace so the event always fires. Ours via __setvm.
+  poseSeq++;
+  a.contentWindow.location.hash =
+    '#' + encodeURIComponent(JSON.stringify(vm) + ' '.repeat(poseSeq % 8));
+  const bw = b.contentWindow;
+  bw.__setfocal(FX, FY);
+  bw.__setvm(vm.slice(0));
+}
+
+function grab(iframe, sel) {
+  const cv = iframe.contentDocument && iframe.contentDocument.querySelector(sel);
+  if (!cv) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    iframe.contentWindow.requestAnimationFrame(() => {
+      iframe.contentWindow.requestAnimationFrame(() => {
+        const c2 = document.createElement('canvas');
+        c2.width = cv.width; c2.height = cv.height;
+        c2.getContext('2d').drawImage(cv, 0, 0);
+        resolve(c2);
+      });
+    });
+  });
+}
+
+async function diffOnce() {
+  const [ca, cb] = await Promise.all([grab(a, '#canvas'), grab(b, 'canvas.webgpu')]);
+  if (!ca || !cb) return { error: 'canvas not ready' };
+  const W = Math.min(ca.width, cb.width), H = Math.min(ca.height, cb.height);
+  const da = ca.getContext('2d').getImageData(0, 0, W, H).data;
+  const db = cb.getContext('2d').getImageData(0, 0, W, H).data;
+  const out = document.getElementById('diff');
+  out.width = W; out.height = H;
+  const ctx = out.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  let sum = 0, big = 0, max = 0;
+  for (let i = 0; i < W * H; i++) {
+    const d = Math.max(
+      Math.abs(da[i*4] - db[i*4]),
+      Math.abs(da[i*4+1] - db[i*4+1]),
+      Math.abs(da[i*4+2] - db[i*4+2]));
+    sum += d;
+    if (d > 16) big++;
+    if (d > max) max = d;
+    img.data[i*4] = Math.min(255, d * 4);
+    img.data[i*4+1] = Math.min(255, Math.max(0, d * 4 - 255));
+    img.data[i*4+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return { mean: sum / (W * H), max, bigPct: (100 * big) / (W * H), W, H };
+}
+
+async function runAll() {
+  await waitReady();
+  const results = [];
+  for (const p of POSES) {
+    setPose(p.vm);
+    await sleep(700); // let both re-sort + settle
+    const r = await diffOnce();
+    results.push({ pose: p.name, ...r });
+    document.getElementById('stats').innerHTML = results
+      .map((x) => `${x.pose}: mean <b>${x.mean?.toFixed(3)}</b> max <b>${x.max}</b> &gt;16: <b>${x.bigPct?.toFixed(3)}%</b>`)
+      .join(' · ');
+  }
+  window.__results = results;
+  return results;
+}
+document.getElementById('run').onclick = runAll;
+window.runAll = runAll;
+
+// dynamic-path validation: reload the port with a decoded frame-N .splat,
+// seek the streaming viewer to frame N, diff at the person + flame poses
+async function runFrames(frames) {
+  const results = [];
+  for (const f of frames) {
+    a.src = `/webgpu/index.html?url=${encodeURIComponent(`${location.origin}/api/file/flame4d_f${f}.splat`)}#${encodeURIComponent(JSON.stringify(POSES[1].vm))}`;
+    await new Promise((r) => (a.onload = r));
+    for (let i = 0; i < 200; i++) {
+      const sp = a.contentDocument.getElementById('spinner');
+      if (sp && sp.style.display === 'none') break;
+      await sleep(100);
+    }
+    const bw = b.contentWindow;
+    bw.__seek(f);
+    for (let i = 0; i < 100 && bw.__frameShown() !== f; i++) await sleep(100);
+    for (const p of [POSES[1], POSES[2]]) {
+      setPose(p.vm);
+      await sleep(700);
+      const r = await diffOnce();
+      results.push({ frame: f, pose: p.name, ...r });
+    }
+    document.getElementById('stats').innerHTML = results
+      .map((x) => `f${x.frame}/${x.pose}: <b>${x.mean?.toFixed(2)}</b>/${x.max}/${x.bigPct?.toFixed(3)}%`)
+      .join(' · ');
+  }
+  window.__results = results;
+  return results;
+}
+window.runFrames = runFrames;
+</script>
+</body>
+</html>
