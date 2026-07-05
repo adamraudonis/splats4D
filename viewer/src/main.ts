@@ -3,7 +3,9 @@
 // Streaming playback with seek, live re-encode via the dev API, and a
 // split-screen compare against the original uncompressed .splat frames.
 
-import { SplatRenderer, SplatSet } from './renderer';
+import { SplatRenderer } from './renderer';
+import { GlSplatRenderer } from './renderer_gl';
+import type { R, RSet } from './rtypes';
 import {
   getProjectionMatrix,
   multiply4,
@@ -39,24 +41,33 @@ function fail(msg: string, sub = ''): never {
 }
 
 async function init() {
-  if (!navigator.gpu) {
-    fail('WebGPU is required', 'This viewer has no WebGL fallback. Use Chrome 113+, Edge, Safari 26+, or Firefox 141+.');
-  }
   const canvas = document.createElement('canvas');
   canvas.classList.add('webgpu');
   $('canvas-wrap').appendChild(canvas);
-  let renderer: SplatRenderer;
-  try {
-    renderer = await SplatRenderer.create(canvas);
-  } catch (e) {
-    fail('WebGPU initialization failed', String(e));
+  // WebGPU when available, WebGL2 otherwise (?gl=1 forces the fallback)
+  const forceGl = new URLSearchParams(location.search).get('gl') === '1';
+  let rendererInit: R | null = null;
+  if (!forceGl && navigator.gpu) {
+    try {
+      rendererInit = await SplatRenderer.create(canvas);
+    } catch (e) {
+      console.warn('WebGPU init failed, falling back to WebGL2:', e);
+    }
   }
+  if (!rendererInit) {
+    try {
+      rendererInit = await GlSplatRenderer.create(canvas);
+    } catch (e) {
+      fail('WebGPU or WebGL2 required', 'Neither WebGPU nor WebGL2 could be initialized in this browser. ' + String(e));
+    }
+  }
+  const renderer: R = rendererInit;
 
   // ---- persistent state ----
   const tPage = performance.now();
   let meta: Meta | null = null;
-  let splats: SplatSet | null = null; // compressed set
-  let origSet: SplatSet | null = null; // compare set
+  let splats: RSet | null = null; // compressed set
+  let origSet: RSet | null = null; // compare set
   let playing = false;
   let timeSec = 0;
   let compareOn = false;
@@ -170,7 +181,7 @@ async function init() {
         for (let i = 0; i < meta.gops.length; i++) buffered.push(false);
         $('m-total').textContent = (meta.fileSize / 1e6).toFixed(1);
         $('m-splats').textContent = meta.n.toLocaleString();
-        $('m-dyn').textContent = `gop ${meta.gop}`;
+        $('m-dyn').textContent = `gop ${meta.gop} · ${renderer.backend === 'webgl2' ? 'WebGL2' : 'WebGPU'}`;
         $('m-bounds').textContent =
           `±${(meta.bounds.pos_m * 1000).toFixed(1)}mm pos` +
           ` · ${meta.bounds.rgb === 0 ? 'exact' : `±${meta.bounds.rgb}`} color` +

@@ -22,7 +22,7 @@ deterministic, verified by the encoder on every run.
 | default bounds | ±2 mm position · ±4/255 color · **exact** rotation · ±2 % scale |
 | viewer: full first view | 141 ms local · **791 ms @ 50 Mbps** |
 | viewer: seek into unbuffered region | **keyframe in 145 ms** |
-| playback | 60 fps @ 336k splats (WebGPU) |
+| playback | 60 fps @ 336k splats (WebGPU, pixel-identical WebGL2 fallback) |
 
 ## How it works
 
@@ -42,9 +42,10 @@ deterministic, verified by the encoder on every run.
 - **Morton ordering + byte-plane shuffle + zstd** per stream; output lands at
   ~100 % of the order-0 entropy of its own symbols.
 
-The bundled viewer is raw WebGPU — a line-by-line port of the
-[antimatter15/splat](https://github.com/antimatter15/splat) renderer,
-pixel-diff verified against it.
+The bundled viewer is a line-by-line port of the
+[antimatter15/splat](https://github.com/antimatter15/splat) renderer —
+WebGPU when available, the reference's own WebGL2 pipeline as a fallback —
+pixel-diff verified against it on both backends.
 
 ## Repo layout
 
@@ -67,7 +68,7 @@ splat4d encode -i frames_dir -o out.splat4d
 # or build from source
 cargo build --release --manifest-path converter/Cargo.toml
 
-# run the dev viewer (WebGPU: Chrome 113+, Safari 26+, Firefox 141+ on Windows)
+# run the dev viewer (WebGPU when available; WebGL2 fallback otherwise)
 cd viewer && npm install && npm run dev
 ```
 

@@ -191,6 +191,7 @@ export class SplatSet {
 }
 
 export class SplatRenderer {
+  readonly backend = 'webgpu';
   device!: GPUDevice;
   context!: GPUCanvasContext;
   pipeline!: GPURenderPipeline;

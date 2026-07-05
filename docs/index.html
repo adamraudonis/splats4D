@@ -193,7 +193,7 @@
     Live preview, streamed and decoded in your browser: a 2-second dynamic scene as one <b>7.4&nbsp;MB</b>
     <code>.splat4d</code> file &mdash; <b>58&times;</b> smaller than its 427&nbsp;MB of raw <code>.splat</code> frames.
     Press <b>Interact</b> to take the camera: drag to orbit, ctrl-scroll to zoom.
-    Needs WebGPU (Chrome 113+, Safari 26+, Firefox 141+ on Windows) &mdash;
+    Renders with WebGPU when available and falls back to a pixel-identical WebGL2 pipeline everywhere else &mdash;
     <a href="demo/">open the full demo</a> for more scenes and live encoding controls.
   </div>
 </div>
@@ -288,8 +288,9 @@ reaches only 2.5&times;. Full methodology and more baselines:
 <div class="tablewrap" id="bench-tables"><p class="dim">loading benchmarks.json&hellip;</p></div>
 
 <h3>Viewer</h3>
-<p class="dim">Raw WebGPU, a line-by-line port of the
-<a href="https://github.com/antimatter15/splat">antimatter15/splat</a> renderer, pixel-verified against it.</p>
+<p class="dim">A line-by-line port of the
+<a href="https://github.com/antimatter15/splat">antimatter15/splat</a> renderer &mdash; WebGPU when
+available, the reference's own WebGL2 pipeline as the fallback; both pixel-verified.</p>
 <div class="tablewrap"><table class="wrap-ok">
 <tr><th>metric</th><th>local</th><th>throttled 50 Mbps</th></tr>
 <tr><td>full first view (header + static section)</td><td>141&ndash;157 ms</td><td>791 ms</td></tr>

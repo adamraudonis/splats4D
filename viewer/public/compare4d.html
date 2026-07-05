@@ -28,7 +28,9 @@
 </div>
 <canvas id="diff"></canvas>
 <script>
-const KEY = new URLSearchParams(location.search).get('key') ?? 'flame_2s_p5_c4_r1_s2_g30_d0_z3';
+const QP = new URLSearchParams(location.search);
+const KEY = QP.get('key') ?? 'flame_2s_p5_c4_r1_s2_g30_d0_z3';
+const GL = QP.get('gl') === '1'; // diff the WebGL2 fallback instead of WebGPU
 const FRAME0 = `${location.origin}/api/file/flame4d_f0.splat`;
 const FX = 1159.5880733038064, FY = 1164.6601287484507;
 
@@ -53,7 +55,7 @@ const POSES = [
 const a = document.getElementById('a');
 const b = document.getElementById('b');
 a.src = `/webgpu/index.html?url=${encodeURIComponent(FRAME0)}#${encodeURIComponent(JSON.stringify(POSES[0].vm))}`;
-b.src = `/?file=${encodeURIComponent(`/api/file/${KEY}.splat4d`)}&bare=1`;
+b.src = `/?file=${encodeURIComponent(`/api/file/${KEY}.splat4d`)}&bare=1${GL ? '&gl=1' : ''}`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
